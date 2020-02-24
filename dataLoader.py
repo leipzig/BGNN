@@ -8,9 +8,13 @@ import torch
 from skimage import io
 import time
 from torchvision import transforms
+import matplotlib.pyplot as plt
+
+import progressbar
 
 shuffle_dataset = True
 
+# Creates the train/val/test dataloaders out of the dataset 
 def getLoadersFromDataset(dataset, training_count, validation_count, batchSize):
     speciesList = dataset.getSpeciesList()
     train_indices = []
@@ -30,16 +34,9 @@ def getLoadersFromDataset(dataset, training_count, validation_count, batchSize):
         
         # aggregate indices
         sub_train_indices, sub_val_indices, sub_test_indices = indices[:split_train], indices[split_train:split_validation], indices[split_validation:]
-#         print(species)
-#         print("sub_train_indices", sub_train_indices)
-#         print("sub_val_indices", sub_val_indices)
-#         print("sub_test_indices", sub_test_indices)
         train_indices = train_indices + sub_train_indices
         test_indices = test_indices + sub_test_indices
         val_indices = val_indices + sub_val_indices
-#         print("train_indices", train_indices)
-#         print("test_indices", test_indices)
-#         print("val_indices", val_indices)
 
     # create samplers
     train_sampler = SubsetRandomSampler(train_indices)
@@ -52,19 +49,18 @@ def getLoadersFromDataset(dataset, training_count, validation_count, batchSize):
     test_loader = torch.utils.data.DataLoader(dataset, sampler=test_sampler, batch_size=batchSize)
 
     return train_loader, validation_loader, test_loader
-        
-        
+
+
+from ZCA_whitening import ZCA
         
 class FishDataset(Dataset):
-    def __init__(self, data_root, img_H, img_W, verbose=False):
+    def __init__(self, data_root, imageDimension, n_channels, verbose=False):
         self.samples = [] # The list of all samples
         self.speciesDictionary = {} # used to get information about each species.
         self.speciesIndexer = [] # used to replace name with a simple number.
         self.data_root = data_root
-        self.transforms = transforms.Compose([transforms.ToPILImage(),
-                                              transforms.Resize((img_H, img_W)),
-                                              transforms.ToTensor(),
-                                             ])
+        self.imageDimension = imageDimension
+        self.n_channels = n_channels
 
         index = 0
         # for each file, create a data object
@@ -76,10 +72,10 @@ class FishDataset(Dataset):
                     'species': species,
                     'number': num,
                     'index': index,
-                    'fileName': fileName
+                    'fileName': fileName,
+                    'image': io.imread(os.path.join(self.data_root, fileName))
                 }
                 self.samples.append(sampleInfo)
-                # print(species, "-", num, "-", fileName)
                 
                 # create a dictionary of species
                 if (species not in self.speciesDictionary):
@@ -91,6 +87,31 @@ class FishDataset(Dataset):
             else:
                 warnings.warn("Could not find a match for " + sampleInfo['fileName'])
         
+        # Calculate whitening matrix
+        preWhiteningTransformationsList = [transforms.ToPILImage(),
+                      transforms.Lambda(self.MakeSquared),
+                      transforms.ToTensor()]
+        sampleSet = list(map(lambda sample: sample['image'], self.samples))
+        preWhiteningTransformation = transforms.Compose(preWhiteningTransformationsList)
+        with progressbar.ProgressBar(maxval=len(sampleSet), redirect_stdout=True) as bar:
+            bar.update(0)
+            for i, sample in enumerate(sampleSet):
+                sampleSet[i] = preWhiteningTransformation(sample)
+                bar.update(i)
+        zca = ZCA(sampleSet)
+        Z = zca.computeZCAMatrix()
+        
+        # apply transformations
+        flattenedImageSize = self.imageDimension*self.imageDimension*self.n_channels
+        transformsList = preWhiteningTransformationsList+[
+            transforms.Lambda(zca.scaleData),
+            transforms.LinearTransformation(Z, torch.zeros(flattenedImageSize)),
+            transforms.Lambda(zca.scaleSampleToUnity),
+        ]
+        if n_channels == 1:
+            transformsList.insert(1, transforms.Grayscale())
+        self.transforms = transforms.Compose(transformsList)
+        
         if verbose:
             print("Number of images = ", len(self.samples))
             for i in range(len(self.speciesIndexer)):
@@ -98,38 +119,59 @@ class FishDataset(Dataset):
                 numOfImages = len(self.speciesDictionary[species])
                 print(i, species, " has ", numOfImages, " images")
 
+    
+    # Makes the image squared while still preserving the aspect ratio
+    def MakeSquared(self, img):
+        img_H = img.size[0]
+        img_W = img.size[1]
+        
+        # Resize
+        smaller_dimension = 0 if img_H < img_W else 1
+        larger_dimension = 1 if img_H < img_W else 0
+        new_smaller_dimension = int(self.imageDimension * img.size[smaller_dimension] / img.size[larger_dimension])
+        if smaller_dimension == 1:
+            img = transforms.functional.resize(img, (new_smaller_dimension, self.imageDimension))
+        else:
+            img = transforms.functional.resize(img, (self.imageDimension, new_smaller_dimension))
+
+        # pad
+        diff = self.imageDimension - new_smaller_dimension
+        pad_1 = int(diff/2)
+        pad_2 = diff - pad_1
+        fill = 255
+        if self.n_channels != 1:
+            fill = (255, 255, 255)
+        if smaller_dimension == 0:
+            img = transforms.functional.pad(img, (pad_1, 0, pad_2, 0), padding_mode='constant', fill = fill)
+        else:
+            img = transforms.functional.pad(img, (0, pad_1, 0, pad_2), padding_mode='constant', fill = fill)
+
+        return img
 
     def __len__(self):
         return len(self.samples)
     
+    # The list of species names
     def getSpeciesList(self):
         return self.speciesIndexer
     
     def getNumberOfImagesForSpecies(self, species):
         return len(self.speciesDictionary[species])
     
-    # returns the indices of the species in self.samples
+    # returns the indices of a species in self.samples
     def getSpeciesIndices(self, species):
         indices = list(map(lambda x: x['index'], self.speciesDictionary[species]))
         return indices
     
     def getSpeciesOfIndex(self, index):
         return self.speciesIndexer[index]
-    
-#     def getSpeciesDictionary(self, index):
-#         dict = {}
-#         for i in range(len(self.speciesIndexer)):
-#             dict[i] = self.speciesIndexer[index]
-#         return dict
 
-    def __getitem__(self, idx):
-        img_name = self.samples[idx]['fileName']
+    def __getitem__(self, idx):       
         img_species = self.samples[idx]['species']
-        image = io.imread(os.path.join(self.data_root, img_name))
-        
+        image = self.samples[idx]['image']
         image = self.transforms(image)
-#         print(image.shape)
-        if torch.cuda.is_available():
-            image = image.cuda()
-#         print(image.type())
+
+#         if torch.cuda.is_available():
+#             image = image.cuda()
+
         return {'image': image, 'class': self.speciesIndexer.index(img_species)} 

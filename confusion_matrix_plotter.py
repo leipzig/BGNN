@@ -46,10 +46,8 @@ def plot_confusion_matrix2(cm,
     if cmap is None:
         cmap = plt.get_cmap('Blues')
 
-    plt.figure(figsize=(20, 20))
-    plt.imshow(cm, interpolation='nearest', cmap=cmap)
+    plt.figure(figsize=(20, 17))
     plt.title(title)
-    plt.colorbar()
 
     if target_names is not None:
         tick_marks = np.arange(len(target_names))
@@ -58,9 +56,12 @@ def plot_confusion_matrix2(cm,
 
     if normalize:
         cm = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
+        
+    plt.imshow(cm, cmap=cmap) # , interpolation='nearest'
+    plt.colorbar()
 
 
-    thresh = cm.max() / 1.5 if normalize else cm.max() / 2
+    thresh = np.nanmax(cm) / 1.5 if normalize else np.nanmax(cm) / 2
     for i, j in itertools.product(range(cm.shape[0]), range(cm.shape[1])):
         if normalize:
             plt.text(j, i, "{:0.2f}".format(cm[i, j]),
@@ -75,4 +76,6 @@ def plot_confusion_matrix2(cm,
     plt.tight_layout()
     plt.ylabel('True label')
     plt.xlabel('Predicted label\naccuracy={:0.4f}; misclass={:0.4f}'.format(accuracy, misclass))
+    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
     plt.show()
+#     plt.savefig(savedModelName+"/confusionMatrix.png")

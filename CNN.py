@@ -4,61 +4,78 @@ import progressbar
 from earlystopping import EarlyStopping
 import os
 from torch.autograd import Variable
+import csv
 
+CheckpointName = 'checkpoint.pt'
+accuracyFileName = "accuracy.csv"
+lossFileName = "loss.csv"
 
 # Build the convolutional Neural Network Class
 class CNN(nn.Module):
     
     # Contructor
-    def __init__(self, numberOfClasses, imgH, imgW, kernels, kernelSize):
+    def __init__(self, numberOfClasses, imgH, kernels, kernelSize, n_channels=1):
         super(CNN, self).__init__()
-        n_channels = 3
         in_ch = n_channels
         i=0
         self.numOfLayers = len(kernels)
-        self.numberOfClasses = numberOfClasses 
+        self.numberOfClasses = numberOfClasses
+        self.module_list = nn.ModuleList()
         
-        self.cnn = []
-        self.relu = []
-        self.maxpool = []
         out_ch = 0
         max_pool_kernel_size = 2
         
         while i < self.numOfLayers:
             out_ch = kernels[i]
-            self.cnn.append(nn.Conv2d(in_channels=in_ch, out_channels=out_ch, kernel_size=kernelSize, stride=1, padding=2))
-            self.relu.append(nn.ReLU())
-            self.maxpool.append(nn.MaxPool2d(kernel_size=max_pool_kernel_size))
+            self.module_list.append(nn.Conv2d(in_channels=in_ch, out_channels=out_ch, kernel_size=kernelSize, stride=1, padding=2))
+            self.module_list.append(nn.ReLU())
+            self.module_list.append(nn.MaxPool2d(kernel_size=max_pool_kernel_size))
             in_ch = out_ch
             i = i + 1
         
-        n_size = self._get_conv_output((n_channels, imgH, imgW))
-        self.fc = nn.Linear(n_size, numberOfClasses)
+        n_size = self._get_conv_output((n_channels, imgH, imgH))
+        self.module_list.append(nn.Linear(n_size, numberOfClasses))
     
     # Prediction
     def forward(self, x):
-        out = self.partial_forward(x)
-        out = self.fc(out)
+        inpt, cnn_outputs, relu_outputs, maxpool_outputs, flattened_outputs = self.partial_forward(x)
+        out = self.module_list[-1](flattened_outputs)
         return out
     
     
     # generate input sample and forward to get shape
     def _get_conv_output(self, shape):
         bs = 1
-        input = Variable(torch.rand(bs, *shape))
-        output_feat = self.partial_forward(input)
-        return output_feat.shape[1]
+        x = Variable(torch.rand(bs, *shape))
+        inpt, cnn_outputs, relu_outputs, maxpool_outputs, flattened_outputs = self.partial_forward(x)
+        return flattened_outputs.shape[1]
 
     def partial_forward(self, x):
+        cnn_outputs = []
+        relu_outputs = []
+        maxpool_outputs = []
+        
         out = x
+        inpt = out
         for i in range(self.numOfLayers):
-            out = self.cnn[i](out)
-            out = self.relu[i](out)
-            out = self.maxpool[i](out)
+            out = self.module_list[i*3](out)
+            cnn_outputs.append(out)
+            out = self.module_list[i*3+1](out)
+            relu_outputs.append(out)
+            out = self.module_list[i*3+2](out)
+            maxpool_outputs.append(out)
         out = out.view(out.size(0), -1)
-        return out
+        flattened_outputs = out
+        return inpt, cnn_outputs, relu_outputs, maxpool_outputs, flattened_outputs
+    
+        # Outputs in each steps
+    def activations(self, x):
+        #outputs activation this is not necessary
+        inpt, cnn_outputs, relu_outputs, maxpool_outputs, flattened_outputs = self.partial_forward(x)
+        out = self.module_list[-1](flattened_outputs)
+        return inpt, cnn_outputs, relu_outputs, maxpool_outputs, flattened_outputs, out
       
-def trainModel(train_loader, validation_loader, n_epochs, model, patience=20):
+def trainModel(train_loader, validation_loader, n_epochs, model, savedModelName, patience=20):
     criterion = nn.CrossEntropyLoss()
     learning_rate = 0.1
     optimizer = torch.optim.SGD(model.parameters(), lr = learning_rate)
@@ -89,7 +106,7 @@ def trainModel(train_loader, validation_loader, n_epochs, model, patience=20):
                 N_test = N_test + len(batch["image"])
             accuracy = correct / N_test
             accuracy_list.append(accuracy)
-            loss_list.append(loss.data)
+            loss_list.append(loss.data.item())
             
             bar.update(epoch+1)
             
@@ -98,12 +115,39 @@ def trainModel(train_loader, validation_loader, n_epochs, model, patience=20):
 
             if early_stopping.early_stop:
                 print("Early stopping")
-                print("total number of epochs: " + epoch)
+                print("total number of epochs: ", epoch)
                 break
         
         # load the last checkpoint with the best model
-        fileName = 'checkpoint.pt'
-        model.load_state_dict(torch.load(fileName))
-        os.remove(fileName)
+        model.load_state_dict(torch.load(CheckpointName))
+        
+        # save information
+        if savedModelName is not None:
+            if not os.path.exists(savedModelName):
+                os.makedirs(savedModelName)
+            # save model
+            torch.save(model.state_dict(), savedModelName+"/"+CheckpointName)
+            # save results
+            with open(savedModelName+"/"+accuracyFileName, 'w', newline='') as myfile:
+                wr = csv.writer(myfile)
+                wr.writerows([accuracy_list])
+            with open(savedModelName+"/"+lossFileName, 'w', newline='') as myfile:
+                wr = csv.writer(myfile)
+                wr.writerows([loss_list])
+
+        os.remove(CheckpointName)
     
+    return loss_list, accuracy_list
+
+def loadModel(model, savedModelName):
+    model.load_state_dict(torch.load(savedModelName+"/"+CheckpointName)) 
+    model.eval()
+    accuracy_list = []
+    loss_list = []
+    with open(savedModelName+"/"+accuracyFileName, newline='') as f:
+        reader = csv.reader(f)
+        accuracy_list = [float(i) for i in next(reader)] 
+    with open(savedModelName+"/"+lossFileName, newline='') as f:
+        reader = csv.reader(f)
+        loss_list = [float(i) for i in next(reader)] 
     return loss_list, accuracy_list
