@@ -1,22 +1,30 @@
 from torch import nn
 import torch
 import progressbar
-from earlystopping import EarlyStopping
+from earlystopping import EarlyStopping, CheckpointName
 import os
 from torch.autograd import Variable
 import csv
+import time
+from sklearn.metrics import confusion_matrix
 
-CheckpointName = 'checkpoint.pt'
-accuracyFileName = "accuracy.csv"
-lossFileName = "loss.csv"
+accuracyFileName = "validation_accuracy.csv"
+lossFileName = "training_loss.csv"
+timeFileName = "time.csv"
+epochsFileName = "epochs.csv"
 
 # Build the convolutional Neural Network Class
 class CNN(nn.Module):
     
     # Contructor
-    def __init__(self, numberOfClasses, imgH, kernels, kernelSize, n_channels=1):
+    def __init__(self, numberOfClasses, params):
+        in_ch = params["n_channels"]
+        n_channels = in_ch
+        imageDimension = params["imageDimension"]
+        kernels = params["kernels"]
+        kernelSize = params["kernelSize"]
+        
         super(CNN, self).__init__()
-        in_ch = n_channels
         i=0
         self.numOfLayers = len(kernels)
         self.numberOfClasses = numberOfClasses
@@ -33,7 +41,7 @@ class CNN(nn.Module):
             in_ch = out_ch
             i = i + 1
         
-        n_size = self._get_conv_output((n_channels, imgH, imgH))
+        n_size = self._get_conv_output((n_channels, imageDimension, imageDimension))
         self.module_list.append(nn.Linear(n_size, numberOfClasses))
     
     # Prediction
@@ -75,20 +83,29 @@ class CNN(nn.Module):
         out = self.module_list[-1](flattened_outputs)
         return inpt, cnn_outputs, relu_outputs, maxpool_outputs, flattened_outputs, out
       
-def trainModel(train_loader, validation_loader, n_epochs, model, savedModelName, patience=20):
-    criterion = nn.CrossEntropyLoss()
+
+def getModelFile(experimentName):
+    return experimentName+"/"+CheckpointName
+    
+def trainModel(train_loader, validation_loader, params, model, savedModelName):
+    n_epochs = params["n_epochs"]
+    patience = params["patience"]
+    
     learning_rate = 0.1
     optimizer = torch.optim.SGD(model.parameters(), lr = learning_rate)
-    loss_list=[]
-    accuracy_list=[]
+    training_loss_list=[]
+    validation_accuracy_list=[]
     
     # early stopping
     early_stopping = EarlyStopping(patience=patience)
 
     print("Training started...")
+    start = time.time()
     with progressbar.ProgressBar(maxval=n_epochs, redirect_stdout=True) as bar:
         bar.update(0)
+        epochs = 0
         for epoch in range(n_epochs):
+            criterion = nn.CrossEntropyLoss()
             for batch in train_loader:
                 optimizer.zero_grad()
                 z = model(batch["image"])
@@ -96,27 +113,24 @@ def trainModel(train_loader, validation_loader, n_epochs, model, savedModelName,
                 loss.backward()
                 optimizer.step()
 
-            correct=0
             #perform a prediction on the validation  data  
-            N_test=0
-            for batch in validation_loader:
-                z = model(batch["image"])
-                _, yhat = torch.max(z.data, 1)
-                correct += (yhat == batch["class"]).sum().item()
-                N_test = N_test + len(batch["image"])
-            accuracy = correct / N_test
-            accuracy_list.append(accuracy)
-            loss_list.append(loss.data.item())
+            validation_accuracy_list.append(getAccuracyFromLoader(validation_loader, model))
+            training_loss_list.append(loss.data.item())
             
             bar.update(epoch+1)
             
             # early stopping
             early_stopping(loss.data, epoch, model)
 
+            epochs = epochs + 1
             if early_stopping.early_stop:
                 print("Early stopping")
                 print("total number of epochs: ", epoch)
                 break
+        
+        # Register time
+        end = time.time()
+        time_elapsed = end - start
         
         # load the last checkpoint with the best model
         model.load_state_dict(torch.load(CheckpointName))
@@ -130,24 +144,84 @@ def trainModel(train_loader, validation_loader, n_epochs, model, savedModelName,
             # save results
             with open(savedModelName+"/"+accuracyFileName, 'w', newline='') as myfile:
                 wr = csv.writer(myfile)
-                wr.writerows([accuracy_list])
+                wr.writerows([validation_accuracy_list])
             with open(savedModelName+"/"+lossFileName, 'w', newline='') as myfile:
                 wr = csv.writer(myfile)
-                wr.writerows([loss_list])
+                wr.writerows([training_loss_list])
+            with open(savedModelName+"/"+timeFileName, 'w', newline='') as myfile:
+                wr = csv.writer(myfile)
+                wr.writerow([time_elapsed])
+            with open(savedModelName+"/"+epochsFileName, 'w', newline='') as myfile:
+                wr = csv.writer(myfile)
+                wr.writerow([epochs])
 
         os.remove(CheckpointName)
     
-    return loss_list, accuracy_list
+    return training_loss_list, validation_accuracy_list, epochs, time_elapsed
 
 def loadModel(model, savedModelName):
     model.load_state_dict(torch.load(savedModelName+"/"+CheckpointName)) 
     model.eval()
-    accuracy_list = []
-    loss_list = []
+    validation_accuracy_list = []
+    training_loss_list = []
+    time_elapsed = 0
+    epochs = 0
     with open(savedModelName+"/"+accuracyFileName, newline='') as f:
         reader = csv.reader(f)
-        accuracy_list = [float(i) for i in next(reader)] 
+        validation_accuracy_list = [float(i) for i in next(reader)] 
     with open(savedModelName+"/"+lossFileName, newline='') as f:
         reader = csv.reader(f)
-        loss_list = [float(i) for i in next(reader)] 
-    return loss_list, accuracy_list
+        training_loss_list = [float(i) for i in next(reader)] 
+    with open(savedModelName+"/"+timeFileName, newline='') as f:
+        reader = csv.reader(f)
+        time_elapsed = float(next(reader)[0])
+    with open(savedModelName+"/"+lossFileName, newline='') as f:
+        reader = csv.reader(f)
+        epochs = float(next(reader)[0])
+    return training_loss_list, validation_accuracy_list, epochs, time_elapsed
+
+
+def getAccuracyFromLoader(loader, model):
+    correct=0
+    N_test=0
+    for batch in loader:
+        z = model(batch["image"])
+        _, yhat = torch.max(z.data, 1)
+        correct += (yhat == batch["class"]).sum().item()
+        N_test = N_test + len(batch["image"])
+    return correct / N_test
+
+def getCrossEntropyFromLoader(loader, model):
+    # Initialize the prediction and label lists(tensors)
+    predlist=torch.zeros(0, dtype=torch.float)
+    lbllist=torch.zeros(0, dtype=torch.long)
+
+    with torch.no_grad():
+        for batch in loader:
+            inputs = batch["image"]
+            classes = batch["class"]
+            outputs = model(inputs)
+            _, preds = torch.max(outputs, 1)
+            predlist=torch.cat([predlist,outputs], 0)
+            lbllist=torch.cat([lbllist,classes], 0)    
+
+    criterion = nn.CrossEntropyLoss()
+    return criterion(predlist, lbllist).item()
+
+def getLoaderPredictions(loader, model):
+    # Initialize the prediction and label lists(tensors)
+    predlist=torch.zeros(0)
+    lbllist=torch.zeros(0)
+
+    with torch.no_grad():
+        for batch in loader:
+            inputs = batch["image"]
+            classes = batch["class"]
+            outputs = model(inputs)
+            _, preds = torch.max(outputs, 1)
+
+            # Append batch prediction results
+            predlist=torch.cat([predlist,preds.float().view(-1)])
+            lbllist=torch.cat([lbllist,classes.float().view(-1)])
+            
+    return predlist, lbllist

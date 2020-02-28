@@ -1,13 +1,21 @@
 import numpy as np
 import torch
+from torchvision import transforms
 
 class ZCA:
-    def __init__(self, data):
+    def __init__(self, dataset):
         self.epsilon = 1e-5
         self.mean = None
         self.std = None
+        self.dataset = dataset
+        
+        data = torch.utils.data.DataLoader(dataset, batch_size=len(dataset))
             
-        self.data = self.scaleData(data)
+        dataCpu = next(iter(data))["image"]
+        if torch.cuda.is_available():
+            dataCpu = dataCpu.cpu()
+            
+        self.data = self.scaleData(dataCpu)
 
     def computeZCAMatrix(self):
         #This function computes the ZCA matrix for a set of observables X where
@@ -17,6 +25,8 @@ class ZCA:
         #reshape data from M x C x W x H to M x N where N=C x W x H 
         X = self.data
         X = X.reshape(-1, X.shape[1]*X.shape[2]*X.shape[3])
+        if torch.cuda.is_available():
+            X = X.cpu()
 
         # compute the covariance 
         cov = np.cov(X, rowvar=False)   # cov is (N, N)
@@ -26,8 +36,7 @@ class ZCA:
         # build the ZCA matrix which is (N,N)
         self.zca_matrix = np.dot(U, np.dot(np.diag(1.0/np.sqrt(S + self.epsilon)), U.T))
 
-
-        return torch.from_numpy(self.zca_matrix).float()
+        return torch.tensor(self.zca_matrix.astype(np.float32))
     
     def scaleData(self, data):
         data=np.stack(data, axis=0)
@@ -48,5 +57,16 @@ class ZCA:
     def scaleSampleToUnity(self, sample):
         scaled = (sample - sample.min())/(sample.max() - sample.min())
         return scaled
+    
+    def getTransform(self):
+        Z = self.computeZCAMatrix()
+            
+        # apply transformations
+        flattenedImageSize = self.dataset.imageDimension*self.dataset.imageDimension*self.dataset.n_channels
+        return [
+            transforms.Lambda(self.scaleData),
+            transforms.LinearTransformation(Z, torch.zeros(flattenedImageSize)),
+            transforms.Lambda(self.scaleSampleToUnity),
+        ]
         
     

@@ -1,2 +1,6 @@
 
 Fish_toy/
+
+.ipynb_checkpoints/
+
+__pycache__/

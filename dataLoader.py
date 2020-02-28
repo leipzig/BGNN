@@ -9,17 +9,29 @@ from skimage import io
 import time
 from torchvision import transforms
 import matplotlib.pyplot as plt
+import pickle
 
 import progressbar
 
 shuffle_dataset = True
 
+testLoaderFileName = "testLoader.pkl"
+
+def loadTestLoader(experimentName):
+    with open(experimentName+"/"+testLoaderFileName, 'rb') as f:
+        test_loader = pickle.load(f)
+    return test_loader
+
 # Creates the train/val/test dataloaders out of the dataset 
-def getLoadersFromDataset(dataset, training_count, validation_count, batchSize):
+def getLoadersFromDataset(dataset, params, experimentName):
     speciesList = dataset.getSpeciesList()
     train_indices = []
     val_indices = []
     test_indices = []
+    
+    training_count = params["training_count"]
+    validation_count = params["validation_count"]
+    batchSize = params["batchSize"]
     
     # for each species, get indices for different sets
     for species in speciesList:
@@ -47,6 +59,13 @@ def getLoadersFromDataset(dataset, training_count, validation_count, batchSize):
     train_loader = torch.utils.data.DataLoader(dataset, sampler=train_sampler, batch_size=batchSize)
     validation_loader = torch.utils.data.DataLoader(dataset, sampler=valid_sampler, batch_size=batchSize)
     test_loader = torch.utils.data.DataLoader(dataset, sampler=test_sampler, batch_size=batchSize)
+    
+    # pickle the test_loader to make sure  we always test on unseen data
+    fullFileName = experimentName+"/"+testLoaderFileName
+    if not os.path.exists(experimentName):
+        os.makedirs(experimentName)
+    with open(fullFileName, 'wb') as f:
+        pickle.dump(test_loader, f)
 
     return train_loader, validation_loader, test_loader
 
@@ -54,17 +73,19 @@ def getLoadersFromDataset(dataset, training_count, validation_count, batchSize):
 from ZCA_whitening import ZCA
         
 class FishDataset(Dataset):
-    def __init__(self, data_root, imageDimension, n_channels, verbose=False):
+    def __init__(self, params, verbose=False):
         self.samples = [] # The list of all samples
         self.speciesDictionary = {} # used to get information about each species.
         self.speciesIndexer = [] # used to replace name with a simple number.
-        self.data_root = data_root
-        self.imageDimension = imageDimension
-        self.n_channels = n_channels
+        self.data_root = params["image_path"]
+        self.imageDimension = params["imageDimension"]
+        self.n_channels = params["n_channels"]
+        self.useZCAWhitening = params["useZCAWhitening"]
+        self.useZCAWhitening = params["useZCAWhitening"]
 
         index = 0
         # for each file, create a data object
-        for fileName in os.listdir(data_root):
+        for fileName in os.listdir(self.data_root):
             match = re.match(r"([a-z,\s]+)(\s)([0-9]+)", fileName, re.I)
             if match:
                 (species, dummy, num) = match.groups()
@@ -87,29 +108,18 @@ class FishDataset(Dataset):
             else:
                 warnings.warn("Could not find a match for " + sampleInfo['fileName'])
         
-        # Calculate whitening matrix
-        preWhiteningTransformationsList = [transforms.ToPILImage(),
-                      transforms.Lambda(self.MakeSquared),
-                      transforms.ToTensor()]
-        sampleSet = list(map(lambda sample: sample['image'], self.samples))
-        preWhiteningTransformation = transforms.Compose(preWhiteningTransformationsList)
-        with progressbar.ProgressBar(maxval=len(sampleSet), redirect_stdout=True) as bar:
-            bar.update(0)
-            for i, sample in enumerate(sampleSet):
-                sampleSet[i] = preWhiteningTransformation(sample)
-                bar.update(i)
-        zca = ZCA(sampleSet)
-        Z = zca.computeZCAMatrix()
-        
-        # apply transformations
-        flattenedImageSize = self.imageDimension*self.imageDimension*self.n_channels
-        transformsList = preWhiteningTransformationsList+[
-            transforms.Lambda(zca.scaleData),
-            transforms.LinearTransformation(Z, torch.zeros(flattenedImageSize)),
-            transforms.Lambda(zca.scaleSampleToUnity),
-        ]
-        if n_channels == 1:
+        transformsList = [transforms.ToPILImage(),
+              transforms.Lambda(self.MakeSquared),
+              transforms.ToTensor()]
+        if self.n_channels == 1:
             transformsList.insert(1, transforms.Grayscale())
+                
+        # Calculate whitening matrix
+        if self.useZCAWhitening:
+            self.transforms = transforms.Compose(transformsList)
+            zca = ZCA(self)
+            transformsList = transformsList + zca.getTransform()
+        
         self.transforms = transforms.Compose(transformsList)
         
         if verbose:
@@ -171,7 +181,7 @@ class FishDataset(Dataset):
         image = self.samples[idx]['image']
         image = self.transforms(image)
 
-#         if torch.cuda.is_available():
-#             image = image.cuda()
+        if torch.cuda.is_available():
+            image = image.cuda()
 
         return {'image': image, 'class': self.speciesIndexer.index(img_species)} 

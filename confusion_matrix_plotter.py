@@ -1,12 +1,23 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import itertools
+from sklearn.metrics import classification_report
+
+
+def generate_classification_report(lbllist, predlist, numberOfSpecies, experimentName):
+    classificationReport = classification_report(lbllist.cpu().numpy(), predlist.cpu().numpy(), labels = range(numberOfSpecies), digits=1)
+    classification_report_file = open(experimentName+"/classification_report.txt","w")
+    classification_report_file.writelines(classificationReport) 
+    classification_report_file.close() #to change file access modes 
+    return classificationReport
 
 def plot_confusion_matrix2(cm,
                           target_names,
-                          title='Confusion matrix',
+                          experimentName,
+                          printOutput=False,
                           cmap=None,
-                          normalize=True):
+                          normalize=True,
+):
     """
     given a sklearn confusion matrix (cm), make a nice plot
 
@@ -47,7 +58,7 @@ def plot_confusion_matrix2(cm,
         cmap = plt.get_cmap('Blues')
 
     plt.figure(figsize=(20, 17))
-    plt.title(title)
+    plt.title(experimentName + " - Confusion Matrix")
 
     if target_names is not None:
         tick_marks = np.arange(len(target_names))
@@ -77,5 +88,8 @@ def plot_confusion_matrix2(cm,
     plt.ylabel('True label')
     plt.xlabel('Predicted label\naccuracy={:0.4f}; misclass={:0.4f}'.format(accuracy, misclass))
     plt.tight_layout(rect=[0, 0.03, 1, 0.95])
-    plt.show()
-#     plt.savefig(savedModelName+"/confusionMatrix.png")
+    plt.savefig(experimentName+"/confusionMatrix.png")
+    if printOutput:
+        plt.show()
+    plt.close()
+    return cm

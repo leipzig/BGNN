@@ -5,7 +5,7 @@ import itertools
 # Define the function for plotting the channels. The rows are inputs and the columns are outputs
 # Define the function to plot out the kernel parameters of each channel 
 # Plots a grid from x inputs to y outputs.
-def plot_channels(model, layer_num, number_per_row=8):
+def plot_channels(model, layer_num, experimentName, number_per_row=8):
     name="Parameters of layer "+str(layer_num)
 
     W  = model.state_dict()['module_list.'+str(layer_num*3)+'.weight']
@@ -36,14 +36,14 @@ def plot_channels(model, layer_num, number_per_row=8):
 
     plt.suptitle(name, fontsize=10)   
     plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+    plt.savefig(experimentName+"/"+name+"_channels.png")
     plt.show()
-#     plt.savefig(savedModelName+"/"+name+"_channels.png")
 
     
 # Define the function for plotting the parameters (kernels)
 # Define the function to plot out the kernel parameters of each channel with Multiple outputs . 
 # The inpt defines which input you are plotting parameters for.
-def plot_parameters(model, layer_num, inpt=0, number_per_row=8):
+def plot_parameters(model, layer_num, experimentName, inpt=0, number_per_row=8):
     W  = model.state_dict()['module_list.'+str(layer_num*3)+'.weight']
     name="Kernels of layer "+str(layer_num)+" for input " + str(inpt) 
 
@@ -65,11 +65,11 @@ def plot_parameters(model, layer_num, inpt=0, number_per_row=8):
             ax.set_yticks([])
     plt.suptitle(name, fontsize=10)    
     plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+    plt.savefig(experimentName+"/"+name+"_parameters.png")
     plt.show()
-#     plt.savefig(savedModelName+"/"+name+"_parameters.png")
     
 # Define the function for plotting the activations
-def plot_activations(A, number_rows=4, name=""):
+def plot_activations(A, experimentName, title="", number_rows=4):
     A = A[0, :].cpu().detach().numpy()
     n_activations = A.shape[0]
     A_min = A.min().item()
@@ -98,7 +98,7 @@ def plot_activations(A, number_rows=4, name=""):
                      color="white" if A[i] > thresh else "black")
 
 
-    plt.suptitle(name, fontsize=10)   
+    plt.suptitle(title, fontsize=10)   
     plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+    plt.savefig(experimentName+"/"+title+"_activations.png")
     plt.show()
-#     plt.savefig(savedModelName+"/"+name+"_activations.png")
