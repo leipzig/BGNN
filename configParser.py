@@ -50,6 +50,7 @@ class ConfigParser:
         fullFileName = self.experimentName+"/"+fileName
         if os.path.exists(self.experimentName) and os.path.exists(fullFileName):
             self.experimentName = self.experimentName+"-"+uuid.uuid1().hex
+        fullFileName = self.experimentName+"/"+fileName
             
         if not os.path.exists(self.experimentName):
             os.makedirs(self.experimentName)

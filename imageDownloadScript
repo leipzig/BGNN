@@ -1,4 +1,4 @@
 ﻿#!/bin/bash
-image-scraper -s INHS http://herbaryumu.com/HDR/ --formats jpg
+image-scraper -s INHS http://www.tubri.org/HDR/INHS/
 
 

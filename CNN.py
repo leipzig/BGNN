@@ -108,7 +108,7 @@ def trainModel(train_loader, validation_loader, params, model, savedModelName):
             criterion = nn.CrossEntropyLoss()
             for batch in train_loader:
                 optimizer.zero_grad()
-                z = model(batch["image"])
+                z = applyModel(batch["image"], model)
                 loss = criterion(z, batch["class"])
                 loss.backward()
                 optimizer.step()
@@ -185,7 +185,7 @@ def getAccuracyFromLoader(loader, model):
     correct=0
     N_test=0
     for batch in loader:
-        z = model(batch["image"])
+        z = applyModel(batch["image"], model)
         _, yhat = torch.max(z.data, 1)
         correct += (yhat == batch["class"]).sum().item()
         N_test = N_test + len(batch["image"])
@@ -200,7 +200,7 @@ def getCrossEntropyFromLoader(loader, model):
         for batch in loader:
             inputs = batch["image"]
             classes = batch["class"]
-            outputs = model(inputs)
+            outputs = applyModel(inputs, model)
             _, preds = torch.max(outputs, 1)
             predlist=torch.cat([predlist,outputs], 0)
             lbllist=torch.cat([lbllist,classes], 0)    
@@ -217,7 +217,7 @@ def getLoaderPredictions(loader, model):
         for batch in loader:
             inputs = batch["image"]
             classes = batch["class"]
-            outputs = model(inputs)
+            outputs = applyModel(inputs, model)
             _, preds = torch.max(outputs, 1)
 
             # Append batch prediction results
@@ -225,3 +225,11 @@ def getLoaderPredictions(loader, model):
             lbllist=torch.cat([lbllist,classes.float().view(-1)])
             
     return predlist, lbllist
+
+def applyModel(batch, model):
+    if torch.cuda.is_available():
+        model_dist = torch.nn.DataParallel(model, device_ids=range(torch.cuda.device_count()))
+        outputs = model_dist(batch)
+    else:
+        outputs = model(batch)
+    return outputs

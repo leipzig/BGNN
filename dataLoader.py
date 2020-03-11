@@ -11,8 +11,6 @@ from torchvision import transforms
 import matplotlib.pyplot as plt
 import pickle
 
-import progressbar
-
 shuffle_dataset = True
 
 testLoaderFileName = "testLoader.pkl"
@@ -80,7 +78,6 @@ class FishDataset(Dataset):
         self.data_root = params["image_path"]
         self.imageDimension = params["imageDimension"]
         self.n_channels = params["n_channels"]
-        self.useZCAWhitening = params["useZCAWhitening"]
         self.useZCAWhitening = params["useZCAWhitening"]
 
         index = 0
