@@ -1,7 +1,7 @@
 from torch import nn
 import torch
 import progressbar
-from earlystopping import EarlyStopping, CheckpointName
+from earlystopping import EarlyStopping, CheckpointNameFinal, CheckpointName
 import os
 from torch.autograd import Variable
 import csv
@@ -85,7 +85,7 @@ class CNN(nn.Module):
       
 
 def getModelFile(experimentName):
-    return experimentName+"/"+CheckpointName
+    return experimentName+"/"+CheckpointNameFinal
     
 def trainModel(train_loader, validation_loader, params, model, savedModelName):
     n_epochs = params["n_epochs"]
@@ -140,7 +140,7 @@ def trainModel(train_loader, validation_loader, params, model, savedModelName):
             if not os.path.exists(savedModelName):
                 os.makedirs(savedModelName)
             # save model
-            torch.save(model.state_dict(), savedModelName+"/"+CheckpointName)
+            torch.save(model.state_dict(), savedModelName+"/"+CheckpointNameFinal)
             # save results
             with open(savedModelName+"/"+accuracyFileName, 'w', newline='') as myfile:
                 wr = csv.writer(myfile)
@@ -154,13 +154,13 @@ def trainModel(train_loader, validation_loader, params, model, savedModelName):
             with open(savedModelName+"/"+epochsFileName, 'w', newline='') as myfile:
                 wr = csv.writer(myfile)
                 wr.writerow([epochs])
-        else:
-            os.remove(savedModelName+"/"+CheckpointName)
+
+        os.remove(savedModelName+"/"+CheckpointName)
     
     return training_loss_list, validation_accuracy_list, epochs, time_elapsed
 
 def loadModel(model, savedModelName):
-    model.load_state_dict(torch.load(savedModelName+"/"+CheckpointName)) 
+    model.load_state_dict(torch.load(savedModelName+"/"+CheckpointNameFinal)) 
     model.eval()
     validation_accuracy_list = []
     training_loss_list = []

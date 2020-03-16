@@ -1,7 +1,8 @@
 import numpy as np
 import torch
 
-CheckpointName = 'finalModel.pt'
+CheckpointName = 'intemediateModel.pt'
+CheckpointNameFinal = 'finalModel.pt'
 
 class EarlyStopping:
     """Early stops the training if validation loss doesn't improve after a given patience."""
