@@ -21,7 +21,7 @@ shuffle_dataset = True
 testLoaderFileName = "testLoader.pkl"
 image_subpath = "/images"
 species_csv_fileName = "metadata.csv"
-cleaned_species_csv_fileName = "cleaned_metadata{0}.csv"
+cleaned_species_csv_fileName = "cleaned_metadata.csv"
 statistic_countPerSpecies="count_per_species.csv"
 statistic_countPerFamilyAndGenis="count_per_family_genis.csv"
 saved_dataset="dataset.lst"
@@ -131,10 +131,13 @@ class FishDataset(Dataset):
         self.imageDimension = params["imageDimension"]
         self.n_channels = params["n_channels"]
         self.useZCAWhitening = params["useZCAWhitening"]
-        self.suffix = "_"+str(params["suffix"]) if params["suffix"] is not None else ""
+        self.suffix = str(params["suffix"])+"/" if ("suffix" in params and params["suffix"] is not None) else ""
+
+        if not os.path.exists(self.data_root+"/"+self.suffix):
+            os.makedirs(self.data_root+"/"+self.suffix)
         
-        cleaned_species_csv_fileName_withsuffix = cleaned_species_csv_fileName.format(self.suffix)
-        cleaned_species_csv_fileName_full_path = self.data_root + "/" + cleaned_species_csv_fileName_withsuffix
+        cleaned_species_csv_fileName_withsuffix = cleaned_species_csv_fileName
+        cleaned_species_csv_fileName_full_path = self.data_root+"/"+self.suffix + cleaned_species_csv_fileName_withsuffix
         cleaned_species_csv_file_exists = os.path.exists(cleaned_species_csv_fileName_full_path)
         if not cleaned_species_csv_file_exists:
             # Load csv file, remove duplicates and invalid, sort.
@@ -146,7 +149,7 @@ class FishDataset(Dataset):
         else:
             self.species_csv = pd.read_csv(cleaned_species_csv_fileName_full_path, delimiter='\t', index_col=species_csv_fileName_header, usecols=species_csv_usedColumns) 
             
-        self.species_csv = self.species_csv.sort_values(by=[species_csv_Family_header, species_csv_Genus_header])  
+        self.species_csv = self.species_csv.sort_values(by=[species_csv_Family_header, species_csv_Genus_header])
         
 
         index = 0
@@ -162,7 +165,7 @@ class FishDataset(Dataset):
         
         with progressbar.ProgressBar(maxval=len(fileNames), redirect_stdout=True) as bar:
             bar.update(0)
-            saved_dataset_file = self.data_root + "/" + saved_dataset
+            saved_dataset_file = self.data_root + "/" + self.suffix + saved_dataset
             if not os.path.exists(saved_dataset_file):
                 print("Going through image files")
                 FoundFileNames = []
@@ -208,14 +211,12 @@ class FishDataset(Dataset):
                 print("Loading saved dataset structure...")
                 with open(saved_dataset_file, 'rb') as filehandle:
                     self.samples = joblib.load(filehandle)
-            
-        print(self.species_csv)
         
         # generate/save statistics on the dataset
         filesPerSpecies_table = self.species_csv[species_csv_scientificName_header].reset_index().groupby(species_csv_scientificName_header).agg('count').sort_values(by=[species_csv_fileName_header]).rename(columns={species_csv_fileName_header: "count"})
-        filesPerSpecies_table.to_csv(self.data_root + "/" + statistic_countPerSpecies)
+        filesPerSpecies_table.to_csv(self.data_root + "/" + self.suffix + statistic_countPerSpecies)
         filesPerFamilyAndGenis_table = self.species_csv[[species_csv_Family_header, species_csv_Genus_header]].reset_index().groupby([species_csv_Family_header, species_csv_Genus_header]).agg('count').sort_values(by=[species_csv_Family_header, species_csv_Genus_header]).rename(columns={species_csv_fileName_header: "count"})
-        filesPerFamilyAndGenis_table.to_csv(self.data_root + "/" + statistic_countPerFamilyAndGenis)
+        filesPerFamilyAndGenis_table.to_csv(self.data_root + "/" + self.suffix + statistic_countPerFamilyAndGenis)
         
         transformsList = [transforms.ToPILImage(),
               transforms.Lambda(self.MakeSquared),

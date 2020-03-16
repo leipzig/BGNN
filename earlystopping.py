@@ -5,7 +5,7 @@ CheckpointName = 'finalModel.pt'
 
 class EarlyStopping:
     """Early stops the training if validation loss doesn't improve after a given patience."""
-    def __init__(self, patience=7, verbose=False):
+    def __init__(self, path, patience=7, verbose=False):
         """
         Args:
             patience (int): How long to wait after last time validation loss improved.
@@ -20,6 +20,7 @@ class EarlyStopping:
         self.early_stop = False
         self.best_iteration = 0
         self.val_loss_min = np.Inf
+        self.path=path
 
     def __call__(self, val_loss, itr, model):
 
@@ -45,5 +46,5 @@ class EarlyStopping:
         '''Saves model when validation loss decrease.'''
         if self.verbose:
             print(f'Validation loss decreased ({self.val_loss_min:.6f} --> {val_loss:.6f}).  Saving model ...')
-        torch.save(model.state_dict(), CheckpointName)
+        torch.save(model.state_dict(), self.path+"/"+CheckpointName)
         self.val_loss_min = val_loss

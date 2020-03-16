@@ -97,7 +97,7 @@ def trainModel(train_loader, validation_loader, params, model, savedModelName):
     validation_accuracy_list=[]
     
     # early stopping
-    early_stopping = EarlyStopping(patience=patience)
+    early_stopping = EarlyStopping(path=savedModelName, patience=patience)
 
     print("Training started...")
     start = time.time()
@@ -133,7 +133,7 @@ def trainModel(train_loader, validation_loader, params, model, savedModelName):
         time_elapsed = end - start
         
         # load the last checkpoint with the best model
-        model.load_state_dict(torch.load(CheckpointName))
+        model.load_state_dict(torch.load(savedModelName+"/"+CheckpointName))
         
         # save information
         if savedModelName is not None:
@@ -154,8 +154,8 @@ def trainModel(train_loader, validation_loader, params, model, savedModelName):
             with open(savedModelName+"/"+epochsFileName, 'w', newline='') as myfile:
                 wr = csv.writer(myfile)
                 wr.writerow([epochs])
-
-        os.remove(CheckpointName)
+        else:
+            os.remove(savedModelName+"/"+CheckpointName)
     
     return training_loss_list, validation_accuracy_list, epochs, time_elapsed
 
