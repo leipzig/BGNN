@@ -207,16 +207,16 @@ class FishDataset(Dataset):
                 if not cleaned_species_csv_file_exists:
                     self.species_csv = self.species_csv.loc[FoundFileNames]
                     self.species_csv.to_csv(cleaned_species_csv_fileName_full_path, sep='\t')
+                    
+                # generate/save statistics on the dataset
+                filesPerSpecies_table = self.species_csv[species_csv_scientificName_header].reset_index().groupby(species_csv_scientificName_header).agg('count').sort_values(by=[species_csv_fileName_header]).rename(columns={species_csv_fileName_header: "count"})
+                filesPerSpecies_table.to_csv(self.data_root + "/" + self.suffix + statistic_countPerSpecies)
+                filesPerFamilyAndGenis_table = self.species_csv[[species_csv_Family_header, species_csv_Genus_header]].reset_index().groupby([species_csv_Family_header, species_csv_Genus_header]).agg('count').sort_values(by=[species_csv_Family_header, species_csv_Genus_header]).rename(columns={species_csv_fileName_header: "count"})
+                filesPerFamilyAndGenis_table.to_csv(self.data_root + "/" + self.suffix + statistic_countPerFamilyAndGenis)
             else:
                 print("Loading saved dataset structure...")
                 with open(saved_dataset_file, 'rb') as filehandle:
                     self.samples = joblib.load(filehandle)
-        
-        # generate/save statistics on the dataset
-        filesPerSpecies_table = self.species_csv[species_csv_scientificName_header].reset_index().groupby(species_csv_scientificName_header).agg('count').sort_values(by=[species_csv_fileName_header]).rename(columns={species_csv_fileName_header: "count"})
-        filesPerSpecies_table.to_csv(self.data_root + "/" + self.suffix + statistic_countPerSpecies)
-        filesPerFamilyAndGenis_table = self.species_csv[[species_csv_Family_header, species_csv_Genus_header]].reset_index().groupby([species_csv_Family_header, species_csv_Genus_header]).agg('count').sort_values(by=[species_csv_Family_header, species_csv_Genus_header]).rename(columns={species_csv_fileName_header: "count"})
-        filesPerFamilyAndGenis_table.to_csv(self.data_root + "/" + self.suffix + statistic_countPerFamilyAndGenis)
         
         transformsList = [transforms.ToPILImage(),
               transforms.Lambda(self.MakeSquared),
@@ -226,9 +226,11 @@ class FishDataset(Dataset):
                 
         # Calculate whitening matrix
         if self.useZCAWhitening:
+            print("Calculating ZCA")
             self.transforms = transforms.Compose(transformsList)
             zca = ZCA(self)
             transformsList = transformsList + zca.getTransform()
+            print("Calculating ZCA done")
         
         self.transforms = transforms.Compose(transformsList)
     

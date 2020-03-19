@@ -9,22 +9,29 @@ configJsonFileName = "params.json"
 hyperpConfigJsonFileName = "hyperp_params.json"
 hyperpSearchConfigFileName = "hyperp_search_params.pkl"
 
-def getModelName(params, trial_id=None):
+def getDatasetName(params):
     training_count = params["training_count"]
     validation_count = params["validation_count"]
+    imageDimension = params["imageDimension"]
+    n_channels = params["n_channels"]
+    useZCAWhitening = params["useZCAWhitening"]
+    usePretrained = params["usePretrained"]
+    
+    datasetName = ('tc%d_vc%d_d%d_c%d_zca%s_pt%s') % (training_count, validation_count,
+                                                                          imageDimension, n_channels,
+                                                                          useZCAWhitening, usePretrained)
+   
+    return datasetName
+    
+    
+def getModelName(params, trial_id=None):
     batchSize = params["batchSize"]
     n_epochs = params["n_epochs"]
     kernelSize = params["kernelSize"]
     kernels = '-'.join(map(str, params["kernels"]))  
     patience = params["patience"]
-    imageDimension = params["imageDimension"]
-    n_channels = params["n_channels"]
-    useZCAWhitening = params["useZCAWhitening"]
     
-    modelName = ('tc%d_vc%d_bs%d_e%d_ks%d_k%s_p%d_d%d_c%d_zca%s') % (training_count, validation_count, batchSize,
-                                                                          n_epochs, kernelSize, kernels, patience, 
-                                                                          imageDimension, n_channels,
-                                                                          useZCAWhitening)
+    modelName = ('%s_bs%d_e%d_ks%d_k%s_p%d') % (getDatasetName(params), batchSize, n_epochs, kernelSize, kernels, patience)
    
     if trial_id is not None:
         modelName = modelName + (("_id%s")%(trial_id))  

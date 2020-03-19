@@ -1,0 +1,531 @@
+{
+ "cells": [
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "Setup"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 1,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "%matplotlib inline\n",
+    "\n",
+    "import matplotlib.pyplot as plt\n",
+    "import torch\n",
+    "import CNN\n",
+    "\n",
+    "# from config_plots import global_settings\n",
+    "# global_settings()\n",
+    "import warnings\n",
+    "warnings.filterwarnings(\"ignore\")"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "Hyper parameters"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 2,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# defining global variables\n",
+    "experimentName = \"test_22987_suffix100_2\"\n",
+    "showListOfSpecies = False\n",
+    "\n",
+    "from configParser import ConfigParser, getModelName\n",
+    "config_parser = ConfigParser(experimentName)\n",
+    "    \n",
+    "experimentName = experimentName + \"/multi-trial\"\n",
+    "import TrialStatistics\n",
+    "ts = TrialStatistics.TrialStatistics(experimentName)\n",
+    "\n",
+    "Use_old_dataLoader = False\n",
+    "if Use_old_dataLoader:\n",
+    "    import dataLoader\n",
+    "else:\n",
+    "    import dataLoader2 as dataLoader"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "Cuda support"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 3,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "We are using cuda\n"
+     ]
+    }
+   ],
+   "source": [
+    "# CUDA support \n",
+    "if torch.cuda.is_available():\n",
+    "    torch.cuda.set_device(0) # 0\n",
+    "    torch.set_default_tensor_type('torch.cuda.FloatTensor')\n",
+    "    print(\"We are using cuda\")"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "Iterate"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 4,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stderr",
+     "output_type": "stream",
+     "text": [
+      "\r",
+      "N/A% (0 of 24) |                         | Elapsed Time: 0:00:00 ETA:  --:--:--"
+     ]
+    },
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "experiment  0 / 24 :  {'image_path': 'INHS_cropped', 'suffix': 100, 'training_count': 0.64, 'validation_count': 0.16, 'batchSize': 200, 'n_epochs': 1000, 'numOfTrials': 3, 'kernels': [16, 32], 'kernelSize': 5, 'patience': 50, 'imageDimension': 28, 'n_channels': 1, 'useZCAWhitening': False}\n",
+      "Loading dataset...\n"
+     ]
+    },
+    {
+     "name": "stderr",
+     "output_type": "stream",
+     "text": [
+      "N/A% (0 of 24) |                         | Elapsed Time: 0:00:01 ETA:  --:--:--"
+     ]
+    },
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Loading saved dataset structure...\n"
+     ]
+    },
+    {
+     "name": "stderr",
+     "output_type": "stream",
+     "text": [
+      "100% (3800 of 3800) |####################| Elapsed Time: 0:00:33 Time:  0:00:33\n"
+     ]
+    },
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "                           scientificName     Genus         Family\n",
+      "fileName                                                          \n",
+      "INHS_FISH_59772.jpg     Lepomis cyanellus   Lepomis  Centrarchidae\n",
+      "INHS_FISH_30228.jpg     Lepomis cyanellus   Lepomis  Centrarchidae\n",
+      "INHS_FISH_18781.jpg   Lepomis macrochirus   Lepomis  Centrarchidae\n",
+      "INHS_FISH_50353.jpg   Lepomis macrochirus   Lepomis  Centrarchidae\n",
+      "INHS_FISH_65408.jpg       Lepomis humilis   Lepomis  Centrarchidae\n",
+      "...                                   ...       ...            ...\n",
+      "INHS_FISH_58292.jpg      Gambusia affinis  Gambusia    Poeciliidae\n",
+      "INHS_FISH_101194.jpg     Gambusia affinis  Gambusia    Poeciliidae\n",
+      "INHS_FISH_47832.jpg      Gambusia affinis  Gambusia    Poeciliidae\n",
+      "INHS_FISH_26493.jpg      Gambusia affinis  Gambusia    Poeciliidae\n",
+      "INHS_FISH_78661.jpg      Gambusia affinis  Gambusia    Poeciliidae\n",
+      "\n",
+      "[3800 rows x 3 columns]\n"
+     ]
+    },
+    {
+     "name": "stderr",
+     "output_type": "stream",
+     "text": [
+      "\r",
+      "N/A% (0 of 1000) |                       | Elapsed Time: 0:00:00 ETA:  --:--:--"
+     ]
+    },
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Training started...\n"
+     ]
+    },
+    {
+     "name": "stderr",
+     "output_type": "stream",
+     "text": [
+      "100% (1000 of 1000) |####################| Elapsed Time: 9:48:51 Time:  9:48:51\n"
+     ]
+    },
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Early stopping\n",
+      "total number of epochs:  579\n"
+     ]
+    },
+    {
+     "name": "stderr",
+     "output_type": "stream",
+     "text": [
+      "\r",
+      "N/A% (0 of 1000) |                       | Elapsed Time: 0:00:00 ETA:  --:--:--"
+     ]
+    },
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Training started...\n"
+     ]
+    },
+    {
+     "name": "stderr",
+     "output_type": "stream",
+     "text": [
+      "100% (1000 of 1000) |####################| Elapsed Time: 6:06:57 Time:  6:06:57\n"
+     ]
+    },
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Early stopping\n",
+      "total number of epochs:  369\n"
+     ]
+    },
+    {
+     "name": "stderr",
+     "output_type": "stream",
+     "text": [
+      "\r",
+      "N/A% (0 of 1000) |                       | Elapsed Time: 0:00:00 ETA:  --:--:--"
+     ]
+    },
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Training started...\n"
+     ]
+    },
+    {
+     "name": "stderr",
+     "output_type": "stream",
+     "text": [
+      "100% (1000 of 1000) |####################| Elapsed Time: 9:54:59 Time:  9:54:59\n"
+     ]
+    },
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Early stopping\n",
+      "total number of epochs:  575\n"
+     ]
+    },
+    {
+     "name": "stderr",
+     "output_type": "stream",
+     "text": [
+      "\r",
+      "  4% (1 of 24) |                  | Elapsed Time: 1 day, 1:56:20 ETA:   0:16:49"
+     ]
+    },
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "experiment  1 / 24 :  {'image_path': 'INHS_cropped', 'suffix': 100, 'training_count': 0.64, 'validation_count': 0.16, 'batchSize': 200, 'n_epochs': 1000, 'numOfTrials': 3, 'kernels': [16, 32], 'kernelSize': 5, 'patience': 50, 'imageDimension': 28, 'n_channels': 1, 'useZCAWhitening': True}\n",
+      "Loading dataset...\n"
+     ]
+    },
+    {
+     "name": "stderr",
+     "output_type": "stream",
+     "text": [
+      "  4% (1 of 24) |                  | Elapsed Time: 1 day, 1:56:21 ETA:   0:17:12"
+     ]
+    },
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Loading saved dataset structure...\n"
+     ]
+    },
+    {
+     "name": "stderr",
+     "output_type": "stream",
+     "text": [
+      "100% (3800 of 3800) |####################| Elapsed Time: 0:05:03 Time:  0:05:03\n"
+     ]
+    },
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "                           scientificName     Genus         Family\n",
+      "fileName                                                          \n",
+      "INHS_FISH_59772.jpg     Lepomis cyanellus   Lepomis  Centrarchidae\n",
+      "INHS_FISH_30228.jpg     Lepomis cyanellus   Lepomis  Centrarchidae\n",
+      "INHS_FISH_18781.jpg   Lepomis macrochirus   Lepomis  Centrarchidae\n",
+      "INHS_FISH_50353.jpg   Lepomis macrochirus   Lepomis  Centrarchidae\n",
+      "INHS_FISH_65408.jpg       Lepomis humilis   Lepomis  Centrarchidae\n",
+      "...                                   ...       ...            ...\n",
+      "INHS_FISH_58292.jpg      Gambusia affinis  Gambusia    Poeciliidae\n",
+      "INHS_FISH_101194.jpg     Gambusia affinis  Gambusia    Poeciliidae\n",
+      "INHS_FISH_47832.jpg      Gambusia affinis  Gambusia    Poeciliidae\n",
+      "INHS_FISH_26493.jpg      Gambusia affinis  Gambusia    Poeciliidae\n",
+      "INHS_FISH_78661.jpg      Gambusia affinis  Gambusia    Poeciliidae\n",
+      "\n",
+      "[3800 rows x 3 columns]\n"
+     ]
+    },
+    {
+     "name": "stderr",
+     "output_type": "stream",
+     "text": [
+      "\r",
+      "N/A% (0 of 1000) |                       | Elapsed Time: 0:00:00 ETA:  --:--:--"
+     ]
+    },
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Training started...\n"
+     ]
+    },
+    {
+     "name": "stderr",
+     "output_type": "stream",
+     "text": [
+      "100% (1000 of 1000) |####################| Elapsed Time: 4:34:17 Time:  4:34:17\n"
+     ]
+    },
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Early stopping\n",
+      "total number of epochs:  244\n"
+     ]
+    },
+    {
+     "name": "stderr",
+     "output_type": "stream",
+     "text": [
+      "\r",
+      "N/A% (0 of 1000) |                       | Elapsed Time: 0:00:00 ETA:  --:--:--"
+     ]
+    },
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Training started...\n"
+     ]
+    },
+    {
+     "name": "stderr",
+     "output_type": "stream",
+     "text": [
+      "100% (1000 of 1000) |####################| Elapsed Time: 6:50:44 Time:  6:50:44\n"
+     ]
+    },
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Early stopping\n",
+      "total number of epochs:  378\n"
+     ]
+    },
+    {
+     "name": "stderr",
+     "output_type": "stream",
+     "text": [
+      "\r",
+      "N/A% (0 of 1000) |                       | Elapsed Time: 0:00:00 ETA:  --:--:--"
+     ]
+    },
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Training started...\n"
+     ]
+    },
+    {
+     "name": "stderr",
+     "output_type": "stream",
+     "text": [
+      "100% (1000 of 1000) |####################| Elapsed Time: 6:39:00 Time:  6:39:00\n"
+     ]
+    },
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Early stopping\n",
+      "total number of epochs:  364\n"
+     ]
+    },
+    {
+     "name": "stderr",
+     "output_type": "stream",
+     "text": [
+      "\r",
+      "  8% (2 of 24) |#                | Elapsed Time: 1 day, 20:12:06 ETA:   0:17:16"
+     ]
+    },
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "experiment  2 / 24 :  {'image_path': 'INHS_cropped', 'suffix': 100, 'training_count': 0.64, 'validation_count': 0.16, 'batchSize': 200, 'n_epochs': 1000, 'numOfTrials': 3, 'kernels': [16, 32], 'kernelSize': 9, 'patience': 50, 'imageDimension': 28, 'n_channels': 1, 'useZCAWhitening': False}\n",
+      "Loading dataset...\n"
+     ]
+    },
+    {
+     "name": "stderr",
+     "output_type": "stream",
+     "text": [
+      "  8% (2 of 24) |#                | Elapsed Time: 1 day, 20:12:07 ETA:   0:17:38"
+     ]
+    },
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Loading saved dataset structure...\n"
+     ]
+    },
+    {
+     "name": "stderr",
+     "output_type": "stream",
+     "text": [
+      "100% (3800 of 3800) |####################| Elapsed Time: 0:01:28 Time:  0:01:28\n"
+     ]
+    },
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "                           scientificName     Genus         Family\n",
+      "fileName                                                          \n",
+      "INHS_FISH_59772.jpg     Lepomis cyanellus   Lepomis  Centrarchidae\n",
+      "INHS_FISH_30228.jpg     Lepomis cyanellus   Lepomis  Centrarchidae\n",
+      "INHS_FISH_18781.jpg   Lepomis macrochirus   Lepomis  Centrarchidae\n",
+      "INHS_FISH_50353.jpg   Lepomis macrochirus   Lepomis  Centrarchidae\n",
+      "INHS_FISH_65408.jpg       Lepomis humilis   Lepomis  Centrarchidae\n",
+      "...                                   ...       ...            ...\n",
+      "INHS_FISH_58292.jpg      Gambusia affinis  Gambusia    Poeciliidae\n",
+      "INHS_FISH_101194.jpg     Gambusia affinis  Gambusia    Poeciliidae\n",
+      "INHS_FISH_47832.jpg      Gambusia affinis  Gambusia    Poeciliidae\n",
+      "INHS_FISH_26493.jpg      Gambusia affinis  Gambusia    Poeciliidae\n",
+      "INHS_FISH_78661.jpg      Gambusia affinis  Gambusia    Poeciliidae\n",
+      "\n",
+      "[3800 rows x 3 columns]\n"
+     ]
+    },
+    {
+     "name": "stderr",
+     "output_type": "stream",
+     "text": [
+      "\r",
+      "N/A% (0 of 1000) |                       | Elapsed Time: 0:00:00 ETA:  --:--:--"
+     ]
+    },
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Couldn't write pickle\n",
+      "Training started...\n"
+     ]
+    },
+    {
+     "name": "stderr",
+     "output_type": "stream",
+     "text": [
+      "  0% (1 of 1000) |                       | Elapsed Time: 0:01:06 ETA:  18:33:40\n",
+      "\n"
+     ]
+    },
+    {
+     "ename": "OSError",
+     "evalue": "[Errno 28] No space left on device",
+     "output_type": "error",
+     "traceback": [
+      "\u001b[0;31m---------------------------------------------------------------------------\u001b[0m",
+      "\u001b[0;31mOSError\u001b[0m                                   Traceback (most recent call last)",
+      "\u001b[0;32m~/melhamodenv3/lib/python3.6/site-packages/torch/serialization.py\u001b[0m in \u001b[0;36msave\u001b[0;34m(obj, f, pickle_module, pickle_protocol, _use_new_zipfile_serialization)\u001b[0m\n\u001b[1;32m    327\u001b[0m     \u001b[0;32mwith\u001b[0m \u001b[0m_open_file_like\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mf\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0;34m'wb'\u001b[0m\u001b[0;34m)\u001b[0m \u001b[0;32mas\u001b[0m \u001b[0mopened_file\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m--> 328\u001b[0;31m         \u001b[0m_legacy_save\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mobj\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mopened_file\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mpickle_module\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mpickle_protocol\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m    329\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n",
+      "\u001b[0;32m~/melhamodenv3/lib/python3.6/site-packages/torch/serialization.py\u001b[0m in \u001b[0;36m_legacy_save\u001b[0;34m(obj, f, pickle_module, pickle_protocol)\u001b[0m\n\u001b[1;32m    404\u001b[0m     \u001b[0mpickle_module\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mdump\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mserialized_storage_keys\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mf\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mprotocol\u001b[0m\u001b[0;34m=\u001b[0m\u001b[0mpickle_protocol\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m--> 405\u001b[0;31m     \u001b[0mf\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mflush\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m    406\u001b[0m     \u001b[0;32mfor\u001b[0m \u001b[0mkey\u001b[0m \u001b[0;32min\u001b[0m \u001b[0mserialized_storage_keys\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n",
+      "\u001b[0;31mOSError\u001b[0m: [Errno 28] No space left on device",
+      "\nDuring handling of the above exception, another exception occurred:\n",
+      "\u001b[0;31mOSError\u001b[0m                                   Traceback (most recent call last)",
+      "\u001b[0;32m<ipython-input-4-6c9192680783>\u001b[0m in \u001b[0;36m<module>\u001b[0;34m\u001b[0m\n\u001b[1;32m     35\u001b[0m             \u001b[0;32melse\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m     36\u001b[0m                 \u001b[0mtrain_loader\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mvalidation_loader\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mtest_loader\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0mdataLoader\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mgetLoadersFromDataset\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mdataset\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mexperiment_params\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mtrialName\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m---> 37\u001b[0;31m                 \u001b[0m_\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0m_\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mepochs\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mtime_elapsed\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0mCNN\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mtrainModel\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mtrain_loader\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mvalidation_loader\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mexperiment_params\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mmodel\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mtrialName\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m     38\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m     39\u001b[0m             \u001b[0;31m# Update trial outcomes for statistics\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n",
+      "\u001b[0;32m~/melhamodenv3/BGNN/CNN.py\u001b[0m in \u001b[0;36mtrainModel\u001b[0;34m(train_loader, validation_loader, params, model, savedModelName)\u001b[0m\n\u001b[1;32m    121\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    122\u001b[0m             \u001b[0;31m# early stopping\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m--> 123\u001b[0;31m             \u001b[0mearly_stopping\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mloss\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mdata\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mepoch\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mmodel\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m    124\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    125\u001b[0m             \u001b[0mepochs\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0mepochs\u001b[0m \u001b[0;34m+\u001b[0m \u001b[0;36m1\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n",
+      "\u001b[0;32m~/melhamodenv3/BGNN/earlystopping.py\u001b[0m in \u001b[0;36m__call__\u001b[0;34m(self, val_loss, itr, model)\u001b[0m\n\u001b[1;32m     29\u001b[0m             \u001b[0mself\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mbest_score\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0mscore\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m     30\u001b[0m             \u001b[0mself\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mbest_iteration\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0mitr\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m---> 31\u001b[0;31m             \u001b[0mself\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0msave_checkpoint\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mval_loss\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mmodel\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m     32\u001b[0m         \u001b[0;32melif\u001b[0m \u001b[0mscore\u001b[0m \u001b[0;34m<\u001b[0m \u001b[0mself\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mbest_score\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m     33\u001b[0m             \u001b[0mself\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mcounter\u001b[0m \u001b[0;34m+=\u001b[0m \u001b[0;36m1\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n",
+      "\u001b[0;32m~/melhamodenv3/BGNN/earlystopping.py\u001b[0m in \u001b[0;36msave_checkpoint\u001b[0;34m(self, val_loss, model)\u001b[0m\n\u001b[1;32m     46\u001b[0m         \u001b[0;32mif\u001b[0m \u001b[0mself\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mverbose\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m     47\u001b[0m             \u001b[0mprint\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34mf'Validation loss decreased ({self.val_loss_min:.6f} --> {val_loss:.6f}).  Saving model ...'\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m---> 48\u001b[0;31m         \u001b[0mtorch\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0msave\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mmodel\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mstate_dict\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mCheckpointName\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m     49\u001b[0m         \u001b[0mself\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mval_loss_min\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0mval_loss\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n",
+      "\u001b[0;32m~/melhamodenv3/lib/python3.6/site-packages/torch/serialization.py\u001b[0m in \u001b[0;36msave\u001b[0;34m(obj, f, pickle_module, pickle_protocol, _use_new_zipfile_serialization)\u001b[0m\n\u001b[1;32m    326\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    327\u001b[0m     \u001b[0;32mwith\u001b[0m \u001b[0m_open_file_like\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mf\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0;34m'wb'\u001b[0m\u001b[0;34m)\u001b[0m \u001b[0;32mas\u001b[0m \u001b[0mopened_file\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m--> 328\u001b[0;31m         \u001b[0m_legacy_save\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mobj\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mopened_file\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mpickle_module\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mpickle_protocol\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m    329\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    330\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n",
+      "\u001b[0;32m~/melhamodenv3/lib/python3.6/site-packages/torch/serialization.py\u001b[0m in \u001b[0;36m__exit__\u001b[0;34m(self, *args)\u001b[0m\n\u001b[1;32m    194\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    195\u001b[0m     \u001b[0;32mdef\u001b[0m \u001b[0m__exit__\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mself\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0;34m*\u001b[0m\u001b[0margs\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m--> 196\u001b[0;31m         \u001b[0mself\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mfile_like\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mclose\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m    197\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    198\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n",
+      "\u001b[0;31mOSError\u001b[0m: [Errno 28] No space left on device"
+     ]
+    }
+   ],
+   "source": [
+    "from sklearn.metrics import confusion_matrix, classification_report\n",
+    "from confusion_matrix_plotter import plot_confusion_matrix2, generate_classification_report\n",
+    "import numpy as np\n",
+    "import os\n",
+    "import progressbar\n",
+    "\n",
+    "paramsIterator = config_parser.getHyperpIter()    \n",
+    "number_of_experiments = sum(1 for e in paramsIterator)\n",
+    "paramsIterator = config_parser.getHyperpIter()  \n",
+    "experiment_index = 0\n",
+    "\n",
+    "with progressbar.ProgressBar(max_value=number_of_experiments) as bar:\n",
+    "    for experiment_params in paramsIterator:\n",
+    "        bar.update(experiment_index)\n",
+    "        experiment_params[\"numOfTrials\"] = experiment_params[\"numOfTrials\"] or 1\n",
+    "\n",
+    "        print(\"experiment \", experiment_index, \"/\", number_of_experiments, \": \", experiment_params)\n",
+    "\n",
+    "        # load images\n",
+    "        dataset = dataLoader.FishDataset(experiment_params, showListOfSpecies)\n",
+    "        speciesList = dataset.getSpeciesList()\n",
+    "        numberOfSpecies = len(speciesList)\n",
+    "\n",
+    "        confusionMatricesPerTrial = []\n",
+    "\n",
+    "        for i in range(experiment_params[\"numOfTrials\"]):\n",
+    "            trialName = experimentName+\"/\"+getModelName(experiment_params, i)\n",
+    "\n",
+    "            # Train/Load model\n",
+    "            model = CNN.CNN(numberOfSpecies, experiment_params)\n",
+    "            if os.path.exists(CNN.getModelFile(trialName)):\n",
+    "                _, _, epochs, time_elapsed = CNN.loadModel(model

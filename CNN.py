@@ -91,6 +91,9 @@ def trainModel(train_loader, validation_loader, params, model, savedModelName):
     n_epochs = params["n_epochs"]
     patience = params["patience"]
     
+    if not os.path.exists(savedModelName):
+        os.makedirs(savedModelName)
+    
     learning_rate = 0.1
     optimizer = torch.optim.SGD(model.parameters(), lr = learning_rate)
     training_loss_list=[]
@@ -137,8 +140,6 @@ def trainModel(train_loader, validation_loader, params, model, savedModelName):
         
         # save information
         if savedModelName is not None:
-            if not os.path.exists(savedModelName):
-                os.makedirs(savedModelName)
             # save model
             torch.save(model.state_dict(), savedModelName+"/"+CheckpointNameFinal)
             # save results
