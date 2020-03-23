@@ -1,8 +1,6 @@
 import numpy as np
 import torch
-
-CheckpointName = 'intemediateModel.pt'
-CheckpointNameFinal = 'finalModel.pt'
+import copy
 
 class EarlyStopping:
     """Early stops the training if validation loss doesn't improve after a given patience."""
@@ -22,6 +20,7 @@ class EarlyStopping:
         self.best_iteration = 0
         self.val_loss_min = np.Inf
         self.path=path
+        self.bestModelSoFar = None
 
     def __call__(self, val_loss, itr, model):
 
@@ -47,5 +46,8 @@ class EarlyStopping:
         '''Saves model when validation loss decrease.'''
         if self.verbose:
             print(f'Validation loss decreased ({self.val_loss_min:.6f} --> {val_loss:.6f}).  Saving model ...')
-        torch.save(model.state_dict(), self.path+"/"+CheckpointName)
+        self.bestModelSoFar = copy.deepcopy(model.state_dict())
         self.val_loss_min = val_loss
+        
+    def getBestModel(self):
+        return self.bestModelSoFar

@@ -13,6 +13,7 @@ import pandas as pd
 import progressbar
 import joblib
 from configParser import getDatasetName
+from PIL import Image, ImageStat
 
 shuffle_dataset = True
 
@@ -24,7 +25,7 @@ testIndexFileName = "testIndex.pkl"
 valIndexFileName = "valIndex.pkl"
 trainingIndexFileName = "trainingIndex.pkl"
 
-image_subpath = "/images"
+image_subpath = "images"
 species_csv_fileName = "metadata.csv"
 cleaned_species_csv_fileName = "cleaned_metadata.csv"
 statistic_countPerSpecies="count_per_species.csv"
@@ -40,6 +41,7 @@ species_csv_usedColumns = [species_csv_fileName_header,
                           species_csv_Family_header]
 
 from ZCA_whitening import ZCA
+from dataset_normalization import dataset_normalization
         
 class FishDataset(Dataset):
     def __init__(self, params, verbose=False):
@@ -48,19 +50,22 @@ class FishDataset(Dataset):
         self.imageDimension = params["imageDimension"]
         self.n_channels = params["n_channels"]
         self.useZCAWhitening = params["useZCAWhitening"]
+        self.useNormalization = params["useNormalization"]
         self.usePretrained = params["usePretrained"]
         self.data_root, self.suffix  = getParams(params)
-
-        if not os.path.exists(self.data_root+"/"+self.suffix):
-            os.makedirs(self.data_root+"/"+self.suffix)
+        self.transforms_enabled = True
+        
+        data_root_suffix = os.path.join(self.data_root, self.suffix)
+        if not os.path.exists(data_root_suffix):
+            os.makedirs(data_root_suffix)
         
         # Create species_csv
         cleaned_species_csv_fileName_withsuffix = cleaned_species_csv_fileName
-        cleaned_species_csv_fileName_full_path = self.data_root+"/"+self.suffix + cleaned_species_csv_fileName_withsuffix
+        cleaned_species_csv_fileName_full_path = os.path.join(self.data_root, self.suffix, cleaned_species_csv_fileName_withsuffix)
         cleaned_species_csv_file_exists = os.path.exists(cleaned_species_csv_fileName_full_path)
         if not cleaned_species_csv_file_exists:
             # Load csv file, remove duplicates and invalid, sort.
-            csv_full_path = self.data_root + "/" + species_csv_fileName
+            csv_full_path = os.path.join(self.data_root, species_csv_fileName)
             self.species_csv = pd.read_csv(csv_full_path, delimiter='\t', index_col=species_csv_fileName_header, usecols=species_csv_usedColumns)
             self.species_csv = self.species_csv.loc[~self.species_csv.index.duplicated(keep='first')]                         
             self.species_csv = self.species_csv[self.species_csv[species_csv_Genus_header] != '#VALUE!']
@@ -72,7 +77,7 @@ class FishDataset(Dataset):
         
 
         # for each file, create a data object
-        img_full_path = self.data_root+image_subpath
+        img_full_path = os.path.join(self.data_root, image_subpath)
         
         print("Loading dataset...")
         
@@ -120,9 +125,9 @@ class FishDataset(Dataset):
 
             # generate/save statistics on the dataset
             filesPerSpecies_table = self.species_csv[species_csv_scientificName_header].reset_index().groupby(species_csv_scientificName_header).agg('count').sort_values(by=[species_csv_fileName_header]).rename(columns={species_csv_fileName_header: "count"})
-            filesPerSpecies_table.to_csv(self.data_root + "/" + self.suffix + statistic_countPerSpecies)
+            filesPerSpecies_table.to_csv(os.path.join(self.data_root, self.suffix, statistic_countPerSpecies))
             filesPerFamilyAndGenis_table = self.species_csv[[species_csv_Family_header, species_csv_Genus_header]].reset_index().groupby([species_csv_Family_header, species_csv_Genus_header]).agg('count').sort_values(by=[species_csv_Family_header, species_csv_Genus_header]).rename(columns={species_csv_fileName_header: "count"})
-            filesPerFamilyAndGenis_table.to_csv(self.data_root + "/" + self.suffix + statistic_countPerFamilyAndGenis)
+            filesPerFamilyAndGenis_table.to_csv(os.path.join(self.data_root, self.suffix, statistic_countPerFamilyAndGenis))
 
         # Create transfroms
         if self.usePretrained:
@@ -131,32 +136,44 @@ class FishDataset(Dataset):
             transformsList = self.createTransforms()
         self.transforms = transforms.Compose(transformsList)
     
-    def createTransforms(self):
+    def get_basic_transforms(self):
         # Create transforms
         transformsList = [transforms.ToPILImage(),
               transforms.Lambda(self.MakeSquared),
               transforms.ToTensor()]
         if self.n_channels == 1:
             transformsList.insert(1, transforms.Grayscale())
+        return transformsList
+    
+    def createTransforms(self):
+        transformsList = self.get_basic_transforms()
                 
         # Calculate whitening matrix
-        if self.useZCAWhitening:
+        self.transforms = transforms.Compose(transformsList)
+        if self.useNormalization:
+            normalizer = dataset_normalization(self)
+            transformsList = transformsList + normalizer.getTransform()
+        elif self.useZCAWhitening:
             print("Calculating ZCA")
-            self.transforms = transforms.Compose(transformsList)
             zca = ZCA(self)
             transformsList = transformsList + zca.getTransform()
             print("Calculating ZCA done")
         
         return transformsList
         
-    def createPretrainedTransforms(self):
+    def createPretrainedTransforms(self):        
         transformsList = [
             transforms.ToPILImage(),
-            transforms.RandomResizedCrop(224),
+            transforms.Lambda(self.MakeSquared),
+#             transforms.RandomResizedCrop(224),
 #         transforms.RandomHorizontalFlip(),
             transforms.ToTensor(),
-            transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
         ]       
+        
+        self.transforms = transforms.Compose(transformsList)
+        normalizer = dataset_normalization(self)
+        transformsList = transformsList + normalizer.getTransform()
+        
         return transformsList
         
     # Makes the image squared while still preserving the aspect ratio
@@ -177,9 +194,10 @@ class FishDataset(Dataset):
         diff = self.imageDimension - new_smaller_dimension
         pad_1 = int(diff/2)
         pad_2 = diff - pad_1
-        fill = 255
-        if self.n_channels != 1:
-            fill = (255, 255, 255)
+        stat = ImageStat.Stat(img)
+        fill = tuple([round(x) for x in stat.mean])
+#         if self.n_channels != 1:
+#             fill = (255, 255, 255)
         if smaller_dimension == 0:
             img = transforms.functional.pad(img, (pad_1, 0, pad_2, 0), padding_mode='constant', fill = fill)
         else:
@@ -211,11 +229,19 @@ class FishDataset(Dataset):
     # Convert index to species name.
     def getSpeciesOfIndex(self, index):
         return self.getSpeciesList()[index]
+    
+    def toggle_transofrms(self):
+        self.transforms_enabled = not self.transforms_enabled
 
     def __getitem__(self, idx):       
         img_species = self.samples[idx]['species']
         image = self.samples[idx]['image']
-        image = self.transforms(image)
+        if self.transforms_enabled:
+            image = self.transforms(image)
+        else:
+            transformsList = self.get_basic_transforms()
+            plain_transform = transforms.Compose(transformsList)
+            image = plain_transform(image)
         fileName = self.samples[idx]['fileName']
 
         if torch.cuda.is_available():
@@ -247,7 +273,7 @@ def readFile(fullFileName):
 
 def getParams(params):
     data_root = params["image_path"]
-    suffix = str(params["suffix"])+"/" if ("suffix" in params and params["suffix"] is not None) else ""    
+    suffix = str(params["suffix"]) if ("suffix" in params and params["suffix"] is not None) else ""    
     return data_root, suffix
     
 class datasetManager:
@@ -271,17 +297,18 @@ class datasetManager:
             self.reset()
             self.params = params
             self.data_root, self.suffix = getParams(params)
-            self.experiment_folder_name = self.data_root + "/" + self.suffix + self.experimentName + "/"
-            self.dataset_folder_name = self.experiment_folder_name +  datasetName + "/"
+            self.experiment_folder_name = os.path.join(self.data_root, self.suffix, self.experimentName)
+            self.dataset_folder_name = os.path.join(self.experiment_folder_name, datasetName)
             self.datasetName = datasetName
         
     def getDataset(self):
-        saved_dataset_file = self.dataset_folder_name + dataset_fileName
-        if not os.path.exists(saved_dataset_file):
-            self.dataset = FishDataset(self.params, self.verbose)
-            writeFile(self.dataset_folder_name, saved_dataset_file, self.dataset)
-        else:
-            self.dataset = readFile(saved_dataset_file)
+        saved_dataset_file = os.path.join(self.dataset_folder_name, dataset_fileName)
+        if self.dataset is None:
+            if not os.path.exists(saved_dataset_file):
+                self.dataset = FishDataset(self.params, self.verbose)
+                writeFile(self.dataset_folder_name, saved_dataset_file, self.dataset)
+            else:
+                self.dataset = readFile(saved_dataset_file)
         return self.dataset
 
     # Creates the train/val/test dataloaders out of the dataset 
@@ -289,104 +316,106 @@ class datasetManager:
         if self.dataset is None:
             self.getDataset()
             
-        train_loader = None
-        validation_loader = None
-        test_loader = None
-        loaders = []
-        loader_fileNames = [trainingLoaderFileName, valLoaderFileName, testLoaderFileName]
+        if self.train_loader is None:
+            loaders = []
+            loader_fileNames = [trainingLoaderFileName, valLoaderFileName, testLoaderFileName]
 
-        saved_loader_file = self.dataset_folder_name + testLoaderFileName
+            saved_loader_file = os.path.join(self.dataset_folder_name, testLoaderFileName)
 
-        if not os.path.exists(saved_loader_file):
-            speciesList = self.dataset.getSpeciesList()
-            train_indices = []
-            val_indices = []
-            test_indices = []
+            if not os.path.exists(saved_loader_file):
+                speciesList = self.dataset.getSpeciesList()
 
-            training_count = self.params["training_count"]        
-            validation_count = self.params["validation_count"]
-            batchSize = self.params["batchSize"]
-            
-            index_fileNames = [trainingIndexFileName, valIndexFileName, testIndexFileName]
-            saved_index_file = self.experiment_folder_name + testIndexFileName
-            loader_indices = []
-            if not os.path.exists(saved_index_file):
+                training_count = self.params["training_count"]        
+                validation_count = self.params["validation_count"]
+                batchSize = self.params["batchSize"]
 
-                # for each species, get indices for different sets
-                for species in speciesList:
-                    dataset_size = self.dataset.getNumberOfImagesForSpecies(species)
+                index_fileNames = [trainingIndexFileName, valIndexFileName, testIndexFileName]
+                saved_index_file = os.path.join(self.experiment_folder_name, testIndexFileName)
+                loader_indices = []
+                if not os.path.exists(saved_index_file):
+                    train_indices = []
+                    val_indices = []
+                    test_indices = []
 
-                    # if the count is a ratio instead of absolute value, adjust accordingly
-                    if training_count < 1:
-                        training_count_forSpecies = round(dataset_size*training_count)
-                    else:
-                        training_count_forSpecies = training_count
-                    if validation_count < 1:
-                        validation_count_forSpecies = round(dataset_size*validation_count)
-                    else:
-                        validation_count_forSpecies = validation_count
+                    # for each species, get indices for different sets
+                    for species in speciesList:
+                        dataset_size = self.dataset.getNumberOfImagesForSpecies(species)
 
-                    # Logic to find solitting indices for train/val/test.
-                    # If dataset_size is too small, there will be overlap.
-                    indices = self.dataset.getSpeciesIndices(species)
-                    # training set should at least be one element
-                    split_train = training_count_forSpecies
-                    if split_train == 0:
-                        split_train = 1
-                    # validation set should start from after training set. But if not enough elements, there will be overlap.
-                    # At least one element
-                    split_validation_begin = split_train if split_train < dataset_size else dataset_size - 1
-                    split_validation = (training_count_forSpecies + validation_count_forSpecies) 
-                    if split_validation > dataset_size:
-                        split_validation = dataset_size
-                    if split_validation == split_validation_begin:
-                        split_validation_begin = split_validation_begin - 1
-                    # test set is the remaining but at least one element.
-                    split_test = split_validation if split_validation < dataset_size else dataset_size-1
+                        # if the count is a ratio instead of absolute value, adjust accordingly
+                        if training_count < 1:
+                            training_count_forSpecies = round(dataset_size*training_count)
+                        else:
+                            training_count_forSpecies = training_count
+                        if validation_count < 1:
+                            validation_count_forSpecies = round(dataset_size*validation_count)
+                        else:
+                            validation_count_forSpecies = validation_count
 
-                    if shuffle_dataset :
-                        np.random.seed(int(time.time()))
-                        np.random.shuffle(indices)
+                        # Logic to find solitting indices for train/val/test.
+                        # If dataset_size is too small, there will be overlap.
+                        indices = self.dataset.getSpeciesIndices(species)
+                        # training set should at least be one element
+                        split_train = training_count_forSpecies
+                        if split_train == 0:
+                            split_train = 1
+                        # validation set should start from after training set. But if not enough elements, there will be overlap.
+                        # At least one element
+                        split_validation_begin = split_train if split_train < dataset_size else dataset_size - 1
+                        split_validation = (training_count_forSpecies + validation_count_forSpecies) 
+                        if split_validation > dataset_size:
+                            split_validation = dataset_size
+                        if split_validation == split_validation_begin:
+                            split_validation_begin = split_validation_begin - 1
+                        # test set is the remaining but at least one element.
+                        split_test = split_validation if split_validation < dataset_size else dataset_size-1
 
-                    # aggregate indices
-                    sub_train_indices, sub_val_indices, sub_test_indices = indices[:split_train], indices[split_validation_begin:split_validation], indices[split_test:]
-                    train_indices = train_indices + sub_train_indices
-                    test_indices = test_indices + sub_test_indices
-                    val_indices = val_indices + sub_val_indices
-                
-                # save indices
-                loader_indices = [train_indices, val_indices, test_indices]
-                for i, name in enumerate(index_fileNames):
-                    fullFileName = self.experiment_folder_name+name
-                    writeFile(self.experiment_folder_name, fullFileName, loader_indices[i])
-                    
+                        if shuffle_dataset :
+                            np.random.seed(int(time.time()))
+                            np.random.shuffle(indices)
+
+                        # aggregate indices
+                        sub_train_indices, sub_val_indices, sub_test_indices = indices[:split_train], indices[split_validation_begin:split_validation], indices[split_test:]
+                        train_indices = train_indices + sub_train_indices
+                        test_indices = test_indices + sub_test_indices
+                        val_indices = val_indices + sub_val_indices
+
+                    # save indices
+                    loader_indices = [train_indices, val_indices, test_indices]
+                    for i, name in enumerate(index_fileNames):
+                        fullFileName = os.path.join(self.experiment_folder_name, name)
+                        writeFile(self.experiment_folder_name, fullFileName, loader_indices[i])
+
+                else:
+                    # load the pickles
+                    print("Loading saved indices...")
+                    for i, name in enumerate(index_fileNames):        
+                        loader_indices.append(readFile( os.path.join(self.experiment_folder_name, name)))
+
+
+                # create samplers
+                train_sampler = SubsetRandomSampler(loader_indices[0])
+                valid_sampler = SubsetRandomSampler(loader_indices[1])
+                test_sampler = SubsetRandomSampler(loader_indices[2])
+
+                # create data loaders.
+                self.train_loader = torch.utils.data.DataLoader(self.dataset, sampler=train_sampler, batch_size=batchSize)
+                self.validation_loader = torch.utils.data.DataLoader(self.dataset, sampler=valid_sampler, batch_size=batchSize)
+                self.test_loader = torch.utils.data.DataLoader(self.dataset, sampler=test_sampler, batch_size=batchSize)
+                loaders = [self.train_loader, self.validation_loader, self.test_loader]
+
+                # pickle the loaders
+                for i, name in enumerate(loader_fileNames):
+                    fullFileName = os.path.join(self.dataset_folder_name, name)
+                    writeFile(self.dataset_folder_name, fullFileName, loaders[i])
+
             else:
                 # load the pickles
-                print("Loading saved indices...")
-                for i, name in enumerate(index_fileNames):        
-                    indiloader_indicesces.append(readFile(self.experiment_folder_name+name))
-                
+                print("Loading saved dataloaders...")
+                for i, name in enumerate(loader_fileNames):        
+                    loaders.append(readFile(os.path.join(self.dataset_folder_name,name)))
+
+                self.train_loader = loaders[0]
+                self.validation_loader = loaders[1]
+                self.test_loader = loaders[2]
             
-            # create samplers
-            train_sampler = SubsetRandomSampler(train_indices)
-            valid_sampler = SubsetRandomSampler(val_indices)
-            test_sampler = SubsetRandomSampler(test_indices)
-
-            # create data loaders.
-            train_loader = torch.utils.data.DataLoader(self.dataset, sampler=train_sampler, batch_size=batchSize)
-            validation_loader = torch.utils.data.DataLoader(self.dataset, sampler=valid_sampler, batch_size=batchSize)
-            test_loader = torch.utils.data.DataLoader(self.dataset, sampler=test_sampler, batch_size=batchSize)
-            loaders = [train_loader, validation_loader, test_loader]
-
-            # pickle the loaders
-            for i, name in enumerate(loader_fileNames):
-                fullFileName = self.dataset_folder_name+name
-                writeFile(self.dataset_folder_name, fullFileName, loaders[i])
-
-        else:
-            # load the pickles
-            print("Loading saved dataloaders...")
-            for i, name in enumerate(loader_fileNames):        
-                loaders.append(readFile(self.dataset_folder_name+name))
-
-        return loaders[0], loaders[1], loaders[2]
+        return self.train_loader, self.validation_loader, self.test_loader

@@ -2,11 +2,12 @@ import numpy as np
 import matplotlib.pyplot as plt
 import itertools
 from sklearn.metrics import classification_report
+import os
 
 
 def generate_classification_report(lbllist, predlist, numberOfSpecies, experimentName):
     classificationReport = classification_report(lbllist.cpu().numpy(), predlist.cpu().numpy(), labels = range(numberOfSpecies), digits=1)
-    classification_report_file = open(experimentName+"/classification_report.txt","w")
+    classification_report_file = open(os.path.join(experimentName+"classification_report.txt"),"w")
     classification_report_file.writelines(classificationReport) 
     classification_report_file.close() #to change file access modes 
     return classificationReport
@@ -88,7 +89,7 @@ def plot_confusion_matrix2(cm,
     plt.ylabel('True label')
     plt.xlabel('Predicted label\naccuracy={:0.4f}; misclass={:0.4f}'.format(accuracy, misclass))
     plt.tight_layout(rect=[0, 0.03, 1, 0.95])
-    plt.savefig(experimentName+"/confusionMatrix.png")
+    plt.savefig(os.path.join(experimentName, "confusionMatrix.png"))
     if printOutput:
         plt.show()
     plt.close()

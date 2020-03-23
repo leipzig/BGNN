@@ -67,9 +67,9 @@ class TrialStatistics:
         if aggregated:
             if self.agg_df.empty:
                 self.aggregateTrials()
-            self.agg_df.to_csv(self.experiment_name+"/"+aggregateStatFileName)
+            self.agg_df.to_csv(os.path.join(self.experiment_name, aggregateStatFileName))
         else:
-            self.df.to_csv(self.experiment_name+"/"+rawStatFileName)  
+            self.df.to_csv(os.path.join(self.experiment_name, rawStatFileName))  
         
     def showStatistics(self, aggregated=True):
         df = self.df.copy()
@@ -84,7 +84,7 @@ class TrialStatistics:
 #         df.columns = [' '.join(col).strip() for col in df.columns.values] # work around:https://github.com/quantopian/qgrid/issues/18#issuecomment-149321165
 #         return qgrid.show_grid(df, show_toolbar=True)
         display(HTML(df.to_html()))
-        pivot_ui(df,outfile_path=self.experiment_name+"/"+name_html)
+        pivot_ui(df,outfile_path=os.path.join(self.experiment_name, name_html))
 #         display(HTML(self.experiment_name+"/"+name_html))
             
     def getStatistic(self, trial_params, metric, statistic):
@@ -117,7 +117,7 @@ class TrialStatistics:
         if not self.agg_confusionMatrices:
             self.aggregateTrialConfusionMatrices()
             
-        aggregatePath = self.experiment_name+"/"+getModelName(trial_params)
+        aggregatePath = os.path.join(self.experiment_name, getModelName(trial_params))
         if not os.path.exists(aggregatePath):
             os.makedirs(aggregatePath)
         
@@ -181,7 +181,7 @@ class TrialStatistics:
         if save_plot:
             if not os.path.exists(self.experiment_name):
                 os.makedirs(self.experiment_name)
-            fig.savefig(self.experiment_name+"/"+file_name+".png")
+            fig.savefig(os.path.join(self.experiment_name, file_name+".png"))
 
         
 # TODO: handling classificationReport = generate_classification_report(lbllist, predlist, numberOfSpecies, experimentName)        

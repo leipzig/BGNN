@@ -1,7 +1,7 @@
 
-color/
+.ipynb_checkpoints/
 
-Fish_toy/images/
+__pycache__/
 
 grayscale/
 
@@ -9,6 +9,4 @@ quicktest4/
 
 Fish_toy/
 
-.ipynb_checkpoints/
-
-__pycache__/
+color/

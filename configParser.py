@@ -8,6 +8,7 @@ from hyperopt import fmin, hp, STATUS_OK, Trials, space_eval, plotting, rand, tp
 configJsonFileName = "params.json"
 hyperpConfigJsonFileName = "hyperp_params.json"
 hyperpSearchConfigFileName = "hyperp_search_params.pkl"
+hyperpConfigSelectedJsonFileName = "hyperp_selected_params.pkl"
 
 def getDatasetName(params):
     training_count = params["training_count"]
@@ -15,11 +16,12 @@ def getDatasetName(params):
     imageDimension = params["imageDimension"]
     n_channels = params["n_channels"]
     useZCAWhitening = params["useZCAWhitening"]
+    useNormalization = params["useNormalization"]
     usePretrained = params["usePretrained"]
     
-    datasetName = ('tc%d_vc%d_d%d_c%d_zca%s_pt%s') % (training_count, validation_count,
+    datasetName = ('tc%f_vc%f_d%d_c%d_zca%s_n%s_pt%s') % (training_count, validation_count,
                                                                           imageDimension, n_channels,
-                                                                          useZCAWhitening, usePretrained)
+                                                                          useZCAWhitening, useNormalization, usePretrained)
    
     return datasetName
     
@@ -44,9 +46,10 @@ class ConfigParser:
         self.j = None
         self.hyper_j = None
         self.hyperp_search_pkl = None
+        self.hyper_selected_j = None
     
     def read(self):
-        fullFileName = self.experimentName+"/"+configJsonFileName
+        fullFileName = os.path.join(self.experimentName,configJsonFileName)
         if os.path.exists(fullFileName):
             f = open(fullFileName,"r")
             self.j = json.loads(f.read())
@@ -54,10 +57,10 @@ class ConfigParser:
             return self.j
             
     def write(self, params, fileName=configJsonFileName):
-        fullFileName = self.experimentName+"/"+fileName
+        fullFileName = os.path.join(self.experimentName, fileName)
         if os.path.exists(self.experimentName) and os.path.exists(fullFileName):
-            self.experimentName = self.experimentName+"-"+uuid.uuid1().hex
-        fullFileName = self.experimentName+"/"+fileName
+            self.experimentName = os.path.join(self.experimentName,"-",uuid.uuid1().hex)
+        fullFileName = os.path.join(self.experimentName, fileName)
             
         if not os.path.exists(self.experimentName):
             os.makedirs(self.experimentName)
@@ -66,7 +69,7 @@ class ConfigParser:
             j = json.dumps(params)
             f = open(fullFileName,"w")
             f.write(j)
-            f.close()
+            f.close()            
         else:
             j = params
             with open(fullFileName, 'wb') as f:
@@ -76,6 +79,8 @@ class ConfigParser:
             self.j = j
         elif fileName==hyperpConfigJsonFileName:
             self.hyperp_search_pkl = j
+        elif fileName==hyperpConfigSelectedJsonFileName:
+            self.hyper_selected_j=j
         else:
             self.hyper_j = j
         return fullFileName
@@ -85,9 +90,12 @@ class ConfigParser:
     
     def writeHyperpSearch(self, params):
         return self.write(params, hyperpSearchConfigFileName)
+    
+    def writeHyperpSelected(self, params):
+        return self.write(params, hyperpConfigSelectedJsonFileName)
 
     def getHyperpIter(self):
-        fullFileName = self.experimentName+"/"+hyperpConfigJsonFileName
+        fullFileName = os.path.join(self.experimentName,hyperpConfigJsonFileName)
         if os.path.exists(fullFileName):
             if self.j is None:
                 self.read()
@@ -106,8 +114,23 @@ class ConfigParser:
 
             return iter(experimentList)
         
+    def getHyperpSelectedIter(self):
+        fullFileName = os.path.join(self.experimentName, hyperpConfigSelectedJsonFileName)
+        if os.path.exists(fullFileName):
+            if self.j is None:
+                self.read()
+            with open(fullFileName, 'rb') as f:
+                hyperp_params = pickle.load(f)
+            
+            experimentList = []
+            # create experiment params
+            for expriment in hyperp_params:
+                experimentList.append({**self.j, **expriment})
+
+            return iter(experimentList)
+    
     def getHyperpSearchObject(self):
-        fullFileName = self.experimentName+"/"+hyperpSearchConfigFileName
+        fullFileName = os.path.join(self.experimentName, hyperpSearchConfigFileName)
         if os.path.exists(fullFileName):
             if self.j is None:
                 self.read()
