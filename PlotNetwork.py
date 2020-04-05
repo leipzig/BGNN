@@ -3,23 +3,23 @@ import math
 import itertools
 import os
 import torch
-from CNN import CNN
+from CNN2 import CNN_heirarchy
 import progressbar
 
 
-def get_CNN_premitive_layers(model):
-    result = []
-    children = list(model.children())
-    if len(children) == 0:
-        result = [model]
-    else:
-        for child in children:
-            child_results = get_CNN_premitive_layers(child)
-            result = result + child_results
-    return result
+# def get_CNN_premitive_layers(model):
+#     result = []
+#     children = list(model.children())
+#     if len(children) == 0:
+#         result = [model]
+#     else:
+#         for child in children:
+#             child_results = get_CNN_premitive_layers(child)
+#             result = result + child_results
+#     return result
 
-def get_premitive_layers(model, usePreTrained=False):
-    if usePreTrained:
+def get_premitive_layers(model, useHeirarchy=False):
+    if not useHeirarchy:
         result = [model.conv1,
           model.bn1,
           model.relu,
@@ -30,18 +30,21 @@ def get_premitive_layers(model, usePreTrained=False):
           model.layer4,
           model.avgpool]
     else:
-        result = get_CNN_premitive_layers(model)[:-1]
+        result = model.activations
     return result
 
 class model_activations(torch.nn.Module):
-    def __init__(self, original_model, layer_num):
+    def __init__(self, original_model, layer_num, useHeirarchy):
         super(model_activations, self).__init__()
         if layer_num == -1:
             self.features = original_model
         else:    
-            usePreTrained = not isinstance(original_model, CNN)
-            layers = get_premitive_layers(original_model, usePreTrained)[:layer_num+1]
-            self.features = torch.nn.Sequential(*layers)
+            if not useHeirarchy:
+                layers = get_premitive_layers(original_model, useHeirarchy)[:layer_num+1]
+                self.features = torch.nn.Sequential(*layers)
+            else:
+                activations = get_premitive_layers(original_model, useHeirarchy)
+                self.features = (lambda x: activations(x)[layer_num])
         
     def forward(self, x):
         x = self.features(x)
@@ -88,8 +91,8 @@ def plot_channels(model, layer_num, experimentName, number_per_row=8):
     plt.show()
     
 # Define the function for plotting the activations
-def plot_activations(model, layer_num, input_img, experimentName, title="", number_per_row=4):
-    sub_model = model_activations(model, layer_num)
+def plot_activations(model, layer_num, input_img, experimentName, params, title="", number_per_row=4):
+    sub_model = model_activations(model, layer_num, params["useHeirarchy"])
     A = sub_model(input_img)
     
     A = A[0, :].detach().cpu().detach().numpy()

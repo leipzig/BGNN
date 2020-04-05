@@ -14,11 +14,12 @@ aggregateStatFileName = "agg_experiments.csv"
 rawStatFileName = "raw_experiments.csv"
 
 class TrialStatistics:
-    def __init__(self, experiment_name):
+    def __init__(self, experiment_name, prefix=None):
         self.df = pd.DataFrame()
         self.agg_df = pd.DataFrame()
         
         self.experiment_name = experiment_name
+        self.prefix = prefix
         self.trial_params_keys = []
         self.trial_results_keys = []
         
@@ -65,11 +66,19 @@ class TrialStatistics:
         
     def saveStatistics(self, aggregated=True):
         if aggregated:
+            file_name = aggregateStatFileName
+        else:
+            file_name = rawStatFileName
+            
+        if self.prefix is not None:
+            file_name = self.prefix + "_" + file_name
+            
+        if aggregated:
             if self.agg_df.empty:
                 self.aggregateTrials()
-            self.agg_df.to_csv(os.path.join(self.experiment_name, aggregateStatFileName))
+            self.agg_df.to_csv(os.path.join(self.experiment_name, file_name))
         else:
-            self.df.to_csv(os.path.join(self.experiment_name, rawStatFileName))  
+            self.df.to_csv(os.path.join(self.experiment_name, file_name))  
         
     def showStatistics(self, aggregated=True):
         df = self.df.copy()
@@ -181,13 +190,12 @@ class TrialStatistics:
         if save_plot:
             if not os.path.exists(self.experiment_name):
                 os.makedirs(self.experiment_name)
-            fig.savefig(os.path.join(self.experiment_name, file_name+".png"))
+            fig.savefig(os.path.join(self.experiment_name, file_name+".pdf"))
 
         
 # TODO: handling classificationReport = generate_classification_report(lbllist, predlist, numberOfSpecies, experimentName)        
     def preProcessParameters(self, trial_params):
         trial_params_copy = {**trial_params, **{}}
-        trial_params_copy['kernels'] = str(' '.join([str(elem) for elem in trial_params_copy['kernels']]) )
         return trial_params_copy
     
 # TODO: any place to optimize memory usage?

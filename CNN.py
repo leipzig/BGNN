@@ -8,6 +8,12 @@ import csv
 import time
 from sklearn.metrics import confusion_matrix
 
+useRelu = True
+downsample = False
+downsampleOutput = 50
+takeFromIntermediate = True
+takeFromIntermediateOutput = 50
+
 CheckpointNameFinal = 'finalModel.pt'
 
 accuracyFileName = "validation_accuracy.csv"
@@ -16,92 +22,148 @@ timeFileName = "time.csv"
 epochsFileName = "epochs.csv"
 
 import torchvision.models as models
-def create_model(numberOfClasses, params):
-    usePretrained = params["usePretrained"]
+
+def get_fc(num_of_inputs, num_of_outputs, with_relu = False):
+    if not with_relu:
+        return torch.nn.Sequential(torch.nn.Linear(num_of_inputs, num_of_outputs) , torch.nn.ReLU())
+
+    return torch.nn.Linear(num_of_inputs, num_of_outputs)
+    
+# T
+def create_pretrained_model():
+    model = models.resnet18(pretrained=True)
+    for param in model.parameters():
+        param.requires_grad = False
+    num_ftrs = model.fc.in_features
+    return model, num_ftrs
+    
+def create_model(architecture, params):
     model = None
-    if usePretrained:
+
+    if params["useHeirarchy"]:
+        model = CNN_heirarchy(architecture, params)
+    else:    
         print('using a pretrained resnet18 model...')
-        model = models.resnet18(pretrained=True)
-        for param in model.parameters():
-            param.requires_grad = False
-        num_ftrs = model.fc.in_features
-        model.fc = torch.nn.Linear(num_ftrs, numberOfClasses)
-    else:
-        model = CNN(numberOfClasses, params)
+        model, num_ftrs = create_pretrained_model()
+        model.fc = get_fc(num_ftrs, architecture["species"], False)
 
     return model
 
 # Build the convolutional Neural Network Class
-class CNN(nn.Module):
+class CNN_heirarchy(nn.Module):
     
     # Contructor
-    def __init__(self, numberOfClasses, params):
+    def __init__(self, architecture, params):
         in_ch = params["n_channels"]
         n_channels = in_ch
         imageDimension = params["imageDimension"]
-        kernels = params["kernels"]
-        kernelSize = params["kernelSize"]
+        numberOfClasses = architecture["species"]
+        numberOfGenus = architecture["genus"]
         
-        super(CNN, self).__init__()
-        i=0
-        self.numOfLayers = len(kernels)
+        super(CNN_heirarchy, self).__init__()
         self.numberOfClasses = numberOfClasses
+        self.numberOfGenus = numberOfGenus
         self.module_list = nn.ModuleList()
+
+        # The pretrained model
+        self.pretrained_model, num_ftrs = create_pretrained_model()
+        resnet_subLayers = [self.pretrained_model.conv1,
+          self.pretrained_model.bn1,
+          self.pretrained_model.relu,
+          self.pretrained_model.maxpool,
+          self.pretrained_model.layer1,
+          self.pretrained_model.layer2,
+          self.pretrained_model.layer3,
+          self.pretrained_model.layer4,
+          self.pretrained_model.avgpool]
+        self.resnet_before_fc = torch.nn.Sequential(*resnet_subLayers)
+        self.module_list.append(self.resnet_before_fc)
         
-        out_ch = 0
-        max_pool_kernel_size = 2
-        padding = int((kernelSize-1)/2)
+        # Down sampling to species FC
+        species_inputs = num_ftrs
+        self.downsampled_model = None
+        if downsample:
+            self.downsampled_model = get_fc(num_ftrs, downsampleOutput, True)
+            self.module_list.append(self.downsampled_model)
+            species_inputs = downsampleOutput
+            
+        # Take from intermediate of genus FC
+        genus_inputs = self.numberOfGenus
+        intermediate_input = num_ftrs
+        self.intermediate_genus_model = None
+        if takeFromIntermediate:
+            self.intermediate_genus_model = get_fc(num_ftrs, takeFromIntermediateOutput, True)
+            self.module_list.append(self.intermediate_genus_model)
+            genus_inputs = takeFromIntermediateOutput
+            intermediate_input = takeFromIntermediateOutput
         
-        while i < self.numOfLayers:
-            out_ch = kernels[i]
-            self.module_list.append(nn.Conv2d(in_channels=in_ch, out_channels=out_ch, kernel_size=kernelSize, stride=1, padding=padding))
-            self.module_list.append(nn.ReLU())
-            self.module_list.append(nn.MaxPool2d(kernel_size=max_pool_kernel_size))
-            in_ch = out_ch
-            i = i + 1
+        # Genus    
+        self.genus_fc = get_fc(intermediate_input, self.numberOfGenus, useRelu)
+        self.module_list.append(self.genus_fc)
         
-        n_size = self._get_conv_output((n_channels, imageDimension, imageDimension))
-        self.module_list.append(nn.Linear(n_size, numberOfClasses))
+        # Adjust last layer of resnet
+        if self.intermediate_genus_model:
+            self.pretrained_model.fc = self.intermediate_genus_model
+        else:
+            self.pretrained_model.fc = self.genus_fc
+        self.module_list.insert(0, self.pretrained_model)
+
+        
+        # the fully connect species later
+        self.to_species_layer = torch.nn.Linear(genus_inputs + species_inputs,  numberOfClasses)
+        self.module_list.append(self.to_species_layer)
+        
+        from torchsummary import summary
+        summary(self, (3, 224, 224))
+
+        # append layers
+#         self.moduleObj = {
+#             "resnet_before_fc": self.resnet_before_fc,
+#             "self.pretrained_model": self.pretrained_model,
+#             "downsampled_model": self.downsampled_model,
+#             "intermediate_genus_model": self.intermediate_genus_model,
+#             "genus_fc": self.genus_fc,
+#             "to_species_layer": self.to_species_layer,
+#         }
     
     # Prediction
     def forward(self, x):
-        inpt, cnn_outputs, relu_outputs, maxpool_outputs, flattened_outputs = self.partial_forward(x)
-        out = self.module_list[-1](flattened_outputs)
-        return out
-    
-    
-    # generate input sample and forward to get shape
-    def _get_conv_output(self, shape):
-        bs = 1
-        x = Variable(torch.rand(bs, *shape))
-        inpt, cnn_outputs, relu_outputs, maxpool_outputs, flattened_outputs = self.partial_forward(x)
-        return flattened_outputs.shape[1]
+        activations = self.activations(x)
+        result = {
+            "species": activations["species"],
+            "genus" : activations["genus"]
+        }
+        return result
 
-    def partial_forward(self, x):
-        cnn_outputs = []
-        relu_outputs = []
-        maxpool_outputs = []
-        
-        out = x
-        inpt = out
-        for i in range(self.numOfLayers):
-            out = self.module_list[i*3](out)
-            cnn_outputs.append(out)
-            out = self.module_list[i*3+1](out)
-            relu_outputs.append(out)
-            out = self.module_list[i*3+2](out)
-            maxpool_outputs.append(out)
-        out = out.view(out.size(0), -1)
-        flattened_outputs = out
-        return inpt, cnn_outputs, relu_outputs, maxpool_outputs, flattened_outputs
-    
         # Outputs in each steps
     def activations(self, x):
-        #outputs activation this is not necessary
-        inpt, cnn_outputs, relu_outputs, maxpool_outputs, flattened_outputs = self.partial_forward(x)
-        out = self.module_list[-1](flattened_outputs)
-        return inpt, cnn_outputs, relu_outputs, maxpool_outputs, flattened_outputs, out
-      
+        
+        inpt = x
+        intermediate_from_resnet = torch.flatten(self.resnet_before_fc(inpt),1)
+        
+        genus_intermediate = self.pretrained_model(x)
+        if takeFromIntermediate:
+            genus = self.genus_fc(genus_intermediate)
+        else:
+            genus = genus_intermediate
+            
+        if self.downsampled_model:
+            downsampled_features = self.downsampled_model(intermediate_from_resnet)
+        else:
+            downsampled_features = intermediate_from_resnet
+            
+        species = self.to_species_layer(torch.cat((downsampled_features, genus_intermediate), 1))
+
+        activations = {
+            "input": inpt,
+            "intermediate_resent": intermediate_from_resnet,
+            "genus_intermediate": genus_intermediate,
+            "downsampled_features": downsampled_features,
+            "genus": genus,
+            "species": species
+        }
+
+        return activations
 
 def getModelFile(experimentName):
     return os.path.join(experimentName, CheckpointNameFinal)
@@ -109,12 +171,16 @@ def getModelFile(experimentName):
 def trainModel(train_loader, validation_loader, params, model, savedModelName):
     n_epochs = params["n_epochs"]
     patience = params["patience"]
+    learning_rate = params["learning_rate"]
+    useHeirarchy = params["useHeirarchy"]
+    batchSize = params["batchSize"]
     
     if not os.path.exists(savedModelName):
         os.makedirs(savedModelName)
     
-    learning_rate = 0.1
-    optimizer = torch.optim.SGD(model.parameters(), lr = learning_rate)
+#     learning_rate = 0.1
+    optimizer = torch.optim.Adam(model.parameters(), lr = learning_rate)
+#     optimizer = torch.optim.SGD(model.parameters(), lr = learning_rate)
     training_loss_list=[]
     validation_accuracy_list=[]
     
@@ -133,12 +199,19 @@ def trainModel(train_loader, validation_loader, params, model, savedModelName):
                 optimizer.zero_grad()
                 with torch.set_grad_enabled(True):
                     z = applyModel(batch["image"], model)
-                    loss = criterion(z, batch["class"])
-                    loss.backward()
+                    
+                    loss = None
+                    if useHeirarchy:
+                        loss = criterion(z["genus"], batch["genus"])
+                        loss2 = criterion(z["species"], batch["species"])
+                        (loss + loss2).backward()
+                    else:    
+                        loss = criterion(z, batch["species"])
+                        loss.backward()
                     optimizer.step()
 
             #perform a prediction on the validation data  
-            validation_accuracy_list.append(getAccuracyFromLoader(validation_loader, model))
+            validation_accuracy_list.append(getAccuracyFromLoader(validation_loader, model, params))
             training_loss_list.append(loss.data.item())
             
             bar.update(epoch+1)
@@ -201,55 +274,56 @@ def loadModel(model, savedModelName):
     return training_loss_list, validation_accuracy_list, epochs, time_elapsed
 
 
-def getAccuracyFromLoader(loader, model):
+def getAccuracyFromLoader(loader, model, params):
+    useHeirarchy = params["useHeirarchy"]
+    
     correct=0
     N_test=0
     model.eval()
     for batch in loader:
         with torch.set_grad_enabled(False):
             z = applyModel(batch["image"], model)
+            if useHeirarchy:
+                z = z["species"]
             _, yhat = torch.max(z.data, 1)
-            correct += (yhat == batch["class"]).sum().item()
+            correct += (yhat == batch["species"]).sum().item()
             N_test = N_test + len(batch["image"])
     return correct / N_test
 
-def getCrossEntropyFromLoader(loader, model):
-    # Initialize the prediction and label lists(tensors)
-    predlist=torch.zeros(0, dtype=torch.float)
-    lbllist=torch.zeros(0, dtype=torch.long)
-
-    model.eval()
-    with torch.set_grad_enabled(False):
-        for batch in loader:
-            inputs = batch["image"]
-            classes = batch["class"]
-            outputs = applyModel(inputs, model)
-            _, preds = torch.max(outputs, 1)
-            predlist=torch.cat([predlist,outputs], 0)
-            lbllist=torch.cat([lbllist,classes], 0)    
+def getCrossEntropyFromLoader(loader, model, params, label="species"):
+    predlist, lbllist = getLoaderPredictions(loader, model, params, label, False) 
 
     criterion = nn.CrossEntropyLoss()
     return criterion(predlist, lbllist).item()
 
-def getLoaderPredictions(loader, model):
+def getLoaderPredictions(loader, model, params, label="species", flattenConcat = True):
     # Initialize the prediction and label lists(tensors)
     predlist=torch.zeros(0)
-    lbllist=torch.zeros(0)
+    if flattenConcat:
+        lbllist=torch.zeros(0)
+    else:
+        lbllist=torch.zeros(0, dtype=torch.long)
+    useHeirarchy = params["useHeirarchy"]
 
     model.eval()
     with torch.set_grad_enabled(False):
         for batch in loader:
             inputs = batch["image"]
-            classes = batch["class"]
+            classes = batch[label]
             outputs = applyModel(inputs, model)
+            if useHeirarchy:
+                outputs = outputs[label]
             _, preds = torch.max(outputs, 1)
 
             # Append batch prediction results
-            predlist=torch.cat([predlist,preds.float().view(-1)])
-            lbllist=torch.cat([lbllist,classes.float().view(-1)])
+            if flattenConcat:
+                predlist=torch.cat([predlist,preds.float().view(-1)])
+                lbllist=torch.cat([lbllist,classes.float().view(-1)])
+            else:
+                predlist=torch.cat([predlist,outputs], 0)
+                lbllist=torch.cat([lbllist,classes], 0)  
             
     return predlist, lbllist
-
 def applyModel(batch, model):
     if torch.cuda.is_available():
         model_dist = torch.nn.DataParallel(model, device_ids=range(torch.cuda.device_count()))

@@ -15,13 +15,10 @@ def getDatasetName(params):
     validation_count = params["validation_count"]
     imageDimension = params["imageDimension"]
     n_channels = params["n_channels"]
-    useZCAWhitening = params["useZCAWhitening"]
-    useNormalization = params["useNormalization"]
-    usePretrained = params["usePretrained"]
+    augmentation = params["augmentation"]
     
-    datasetName = ('tc%f_vc%f_d%d_c%d_zca%s_n%s_pt%s') % (training_count, validation_count,
-                                                                          imageDimension, n_channels,
-                                                                          useZCAWhitening, useNormalization, usePretrained)
+    datasetName = ('tc%f_vc%f_d%d_c%d_c%aug') % (training_count, validation_count,
+                                                                          imageDimension, n_channels, augmentation)
    
     return datasetName
     
@@ -29,11 +26,11 @@ def getDatasetName(params):
 def getModelName(params, trial_id=None):
     batchSize = params["batchSize"]
     n_epochs = params["n_epochs"]
-    kernelSize = params["kernelSize"]
-    kernels = '-'.join(map(str, params["kernels"]))  
     patience = params["patience"]
+    learning_rate = params["learning_rate"]
+    useHeirarchy = params["useHeirarchy"]
     
-    modelName = ('%s_bs%d_e%d_ks%d_k%s_p%d') % (getDatasetName(params), batchSize, n_epochs, kernelSize, kernels, patience)
+    modelName = ('%s_bs%d_e%d_p%d_lr%f_h%s') % (getDatasetName(params), batchSize, n_epochs, patience, learning_rate, useHeirarchy)
    
     if trial_id is not None:
         modelName = modelName + (("_id%s")%(trial_id))  
@@ -59,7 +56,7 @@ class ConfigParser:
     def write(self, params, fileName=configJsonFileName):
         fullFileName = os.path.join(self.experimentName, fileName)
         if os.path.exists(self.experimentName) and os.path.exists(fullFileName):
-            self.experimentName = os.path.join(self.experimentName,"-",uuid.uuid1().hex)
+            self.experimentName = self.experimentName+"-"+uuid.uuid1().hex
         fullFileName = os.path.join(self.experimentName, fileName)
             
         if not os.path.exists(self.experimentName):
