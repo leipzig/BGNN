@@ -15,6 +15,7 @@ import joblib
 from configParser import getDatasetName
 from PIL import Image, ImageStat
 import copy
+import random
 
 shuffle_dataset = True
 
@@ -41,7 +42,6 @@ species_csv_usedColumns = [species_csv_fileName_header,
                           species_csv_Genus_header,
                           species_csv_Family_header]
 
-from ZCA_whitening import ZCA
 from dataset_normalization import dataset_normalization
         
 class FishDataset(Dataset):
@@ -52,7 +52,7 @@ class FishDataset(Dataset):
         self.n_channels = params["n_channels"]
         self.data_root, self.suffix  = getParams(params)
         self.augmentation_enabled = params["augmentation"]
-        self.normalization_enabled = True
+        self.normalization_enabled = params["normalize"]
         self.speciesList= None
         self.genusList= None
         self.normalizer = None
@@ -218,6 +218,12 @@ class FishDataset(Dataset):
     def getSpeciesOfIndex(self, index):
         return self.getSpeciesList()[index]
     
+    def getGenusFromSpecies(self, species):
+        return self.species_csv.loc[self.species_csv[species_csv_scientificName_header] == species][species_csv_Genus_header].unique().tolist()[0]
+    
+    def getSpeciesWithinGenus(self, genus):
+        return self.species_csv.loc[self.species_csv[species_csv_Genus_header] == genus][species_csv_scientificName_header].unique().tolist()
+    
     def toggle_image_loading(self, augmentation, normalization):
         old = (self.augmentation_enabled, self.normalization_enabled)
         self.augmentation_enabled = augmentation
@@ -267,6 +273,29 @@ def readFile(fullFileName):
     except:
         print("Couldn't read pickle", fullFileName)
         pass  
+
+    
+def getExample(model, dataset, speciesIndex, expectedIndex, useHeirarchy=True):
+    speciesExampleImage = None
+    speciesName = dataset.getSpeciesOfIndex(speciesIndex)
+
+    augmentation, normalizatoion = dataset.toggle_image_loading(augmentation=False, normalization=False)
+    speciesExamples = dataset.getSpeciesIndices(speciesName)
+
+    random.shuffle(speciesExamples)
+    for example in speciesExamples:
+        image = dataset[example]['image'].unsqueeze(0)
+        actualLabel = model(image)
+        if useHeirarchy:
+            actualLabel = actualLabel["species"]
+        predictedIndex = torch.max(actualLabel.data, 1)[1].cpu().detach().numpy()[0]
+        if (predictedIndex == expectedIndex):
+            speciesExampleImage = image.squeeze()
+            break
+
+    dataset.toggle_image_loading(augmentation, normalizatoion)
+
+    return speciesExampleImage
     
 
 def getParams(params):

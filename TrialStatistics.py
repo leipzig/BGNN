@@ -5,6 +5,7 @@ import os
 from sklearn.metrics import confusion_matrix
 import numpy as np
 from confusion_matrix_plotter import plot_confusion_matrix2, generate_classification_report
+import statistics
 # import qgrid
 import matplotlib.pyplot as plt
 
@@ -12,6 +13,115 @@ from pivottablejs import pivot_ui
 
 aggregateStatFileName = "agg_experiments.csv"
 rawStatFileName = "raw_experiments.csv"
+
+
+class Species_Genus_Statistics:
+    def __init__(self, cm, dataset):
+        self.dataset = dataset
+        self.cm = cm
+    
+    def get_statistics(self, species_index):
+        true_positives = self.cm[species_index, species_index]
+        species_name = self.dataset.getSpeciesOfIndex(species_index)
+        species_names = self.dataset.getSpeciesWithinGenus(self.dataset.getGenusFromSpecies(species_name))
+        species_indexes = list(map(lambda x: self.dataset.getSpeciesList().index(x), species_names))
+
+        within_genus_FP = np.sum(self.cm[species_indexes, species_index]) - true_positives
+        out_of_genus_FP = np.sum(self.cm[:, species_index]) - true_positives - within_genus_FP
+        within_genus_FN = np.sum(self.cm[species_index, species_indexes]) - true_positives
+        out_of_genus_FN = np.sum(self.cm[species_index, :]) - true_positives - within_genus_FN
+        return {
+            "TP": true_positives,
+            "FP_within_genus": within_genus_FP,
+            "FP_out_of_genus": out_of_genus_FP,
+            "FN_within_genus": within_genus_FN,
+            "FN_out_of_genus": out_of_genus_FN,
+        }
+
+    def get_precision_recall(self, species_index):
+        species_statistics = self.get_statistics(species_index)
+        
+        TP = species_statistics["TP"]
+        FP_within_genus = species_statistics["FP_within_genus"]
+        FP_out_of_genus = species_statistics["FP_out_of_genus"]
+        FN_within_genus = species_statistics["FN_within_genus"]
+        FN_out_of_genus = species_statistics["FN_out_of_genus"]
+        
+        Precision_within_genus = TP/(TP + FP_within_genus) if (TP + FP_within_genus) != 0 else 0
+        Precision_out_of_genus = TP/(TP + FP_out_of_genus) if (TP + FP_out_of_genus) != 0 else 0
+        Recall_within_genus = TP/(TP + FN_within_genus) if (TP + FN_within_genus) != 0 else 0
+        Recall_out_of_genus = TP/(TP + FN_out_of_genus) if (TP + FN_out_of_genus) != 0 else 0
+        Precision = TP/(TP + FP_within_genus + FP_out_of_genus) if (TP + FP_within_genus + FP_out_of_genus) != 0 else 0
+        Recall = TP/(TP + FN_within_genus + FN_out_of_genus) if (TP + FN_within_genus + FN_out_of_genus) != 0 else 0
+        
+        return {
+            "Precision_within_genus": Precision_within_genus,
+            "Precision_out_of_genus": Precision_out_of_genus,
+            "Recall_within_genus": Recall_within_genus,
+            "Recall_out_of_genus": Recall_out_of_genus,
+            "Precision": Precision,
+            "Recall": Recall,
+        }
+    
+    def get_F1Scores(self, species_index):
+        precision_recall_stats = self.get_precision_recall(species_index)
+        
+        within_genus_stats = [precision_recall_stats["Precision_within_genus"], precision_recall_stats["Recall_within_genus"]]
+        f1_macro_within_genus = statistics.harmonic_mean(within_genus_stats)
+        
+        out_of_genus_stats = [precision_recall_stats["Precision_out_of_genus"], precision_recall_stats["Recall_out_of_genus"]]
+        f1_macro_out_of_genus = statistics.harmonic_mean(out_of_genus_stats)
+        
+        overall_stats = [precision_recall_stats["Precision"], precision_recall_stats["Recall"]]
+        f1_macro = statistics.harmonic_mean(overall_stats)
+        
+        return {
+            "f1_macro_within_genus": f1_macro_within_genus,
+            "f1_macro_out_of_genus": f1_macro_out_of_genus,
+            "f1_macro": f1_macro,
+        }
+
+class Genus_Statistics:
+    def __init__(self, cm, dataset):
+        self.dataset = dataset
+        self.cm = cm
+    
+    def get_statistics(self, genus_index):
+        true_positives = self.cm[genus_index, genus_index]
+
+        FP = np.sum(self.cm[:, genus_index]) - true_positives
+        FN = np.sum(self.cm[genus_index, :]) - true_positives
+        return {
+            "TP": true_positives,
+            "FP": FP,
+            "FN": FN,
+        }
+
+    def get_precision_recall(self, genus_index):
+        species_statistics = self.get_statistics(genus_index)
+        
+        TP = species_statistics["TP"]
+        FP = species_statistics["FP"]
+        FN = species_statistics["FN"]
+        
+        Precision = TP/(TP + FP) if (TP + FP) != 0 else 0
+        Recall = TP/(TP + FN) if (TP + FN) != 0 else 0
+        
+        return {
+            "Precision": Precision,
+            "Recall": Recall,
+        }
+    
+    def get_F1Scores(self, genus_index):
+        precision_recall_stats = self.get_precision_recall(genus_index)
+        
+        overall_stats = [precision_recall_stats["Precision"], precision_recall_stats["Recall"]]
+        f1_macro = statistics.harmonic_mean(overall_stats)
+        
+        return {
+            "f1_macro": f1_macro,
+        }
+
 
 class TrialStatistics:
     def __init__(self, experiment_name, prefix=None):
@@ -122,20 +232,66 @@ class TrialStatistics:
             confusionMatricesForHash = self.confusionMatrices[hash_key]
             self.agg_confusionMatrices[hash_key] = np.mean(confusionMatricesForHash, axis=0) 
         
-    def printTrialConfusionMatrix(self, trial_params, speciesList, printOutput=False):
+    def prepareConfusionMatrix(self, trial_params):
         if not self.agg_confusionMatrices:
             self.aggregateTrialConfusionMatrices()
-            
-        aggregatePath = os.path.join(self.experiment_name, getModelName(trial_params))
-        if not os.path.exists(aggregatePath):
-            os.makedirs(aggregatePath)
+    
+    def getTrialConfusionMatrix(self, trial_params):
+        self.prepareConfusionMatrix(trial_params)
         
         trial_params_copy = self.preProcessParameters(trial_params)
         trial_hash = hash(frozenset(trial_params_copy.items()))
-        return plot_confusion_matrix2(self.agg_confusionMatrices[trial_hash],
+        return self.agg_confusionMatrices[trial_hash]
+    
+    def printTrialConfusionMatrix(self, trial_params, speciesList, printOutput=False):
+        aggregatePath = os.path.join(self.experiment_name, getModelName(trial_params))
+        if not os.path.exists(aggregatePath):
+            os.makedirs(aggregatePath)
+            
+        return plot_confusion_matrix2(self.getTrialConfusionMatrix(trial_params),
                                   speciesList,
                                   aggregatePath,
                                   printOutput)
+    
+    def printF1table(self, trial_params, dataset):
+        cm = self.getTrialConfusionMatrix(trial_params)
+
+        if self.prefix == "genus":
+            columns = ['genus', 'F1']
+        else:
+            columns = ['species', 'genus', 'F1']
+#             if trial_params['useHeirarchy']:
+            columns = columns + ['F1_within_genus', 'F1_out_of_genus']
+                
+        df = pd.DataFrame(columns=columns)
+
+        if self.prefix == "genus":
+            stats = Genus_Statistics(cm, dataset)
+            for genus_name in dataset.getGenusList():
+                genus_index = dataset.getGenusList().index(genus_name)
+                genus_stats = stats.get_F1Scores(genus_index)
+                df.loc[genus_index] = [" ".join([str(genus_index), genus_name]),
+                                   genus_stats["f1_macro"]]
+        else:
+            stats = Species_Genus_Statistics(cm, dataset)
+            for species in range(len(dataset.getSpeciesList())):
+                species_stats = stats.get_F1Scores(species)
+                species_name = dataset.getSpeciesOfIndex(species)
+                genus_name = dataset.getGenusFromSpecies(species_name)
+                genus_index = dataset.getGenusList().index(genus_name)
+                vals = [" ".join([str(species), species_name]),
+                                   " ".join([str(genus_index), genus_name]),
+                                   species_stats["f1_macro"],]
+#                 if trial_params['useHeirarchy']:
+                vals = vals + [ species_stats["f1_macro_within_genus"],
+                               species_stats["f1_macro_out_of_genus"]]
+                df.loc[species] = vals
+            
+        display(HTML(df.to_html()))
+        file_name = "F1_Scores"
+        if self.prefix == "genus":
+            file_name = file_name + "_genus"
+        pivot_ui(df,outfile_path=os.path.join(self.experiment_name, file_name+".html"))
     
     def trialScatter(self, x, y, aggregated=True, aggregatedBy=None, save_plot=True):
         df = self.agg_df

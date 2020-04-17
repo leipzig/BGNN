@@ -3,7 +3,7 @@ import math
 import itertools
 import os
 import torch
-from CNN2 import CNN_heirarchy
+from CNN import CNN_heirarchy
 import progressbar
 
 
@@ -94,8 +94,10 @@ def plot_channels(model, layer_num, experimentName, number_per_row=8):
 def plot_activations(model, layer_num, input_img, experimentName, params, title="", number_per_row=4):
     sub_model = model_activations(model, layer_num, params["useHeirarchy"])
     A = sub_model(input_img)
+    if params["useHeirarchy"]:
+        A = A['species']
     
-    A = A[0, :].detach().cpu().detach().numpy()
+    A = A[0, :].detach().cpu().numpy()
     n_activations = A.shape[0]
     A_min = A.min().item()
     A_max = A.max().item()

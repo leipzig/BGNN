@@ -7,12 +7,7 @@ from torch.autograd import Variable
 import csv
 import time
 from sklearn.metrics import confusion_matrix
-
-useRelu = True
-downsample = False
-downsampleOutput = 50
-takeFromIntermediate = True
-takeFromIntermediateOutput = 50
+import collections
 
 CheckpointNameFinal = 'finalModel.pt'
 
@@ -23,15 +18,30 @@ epochsFileName = "epochs.csv"
 
 import torchvision.models as models
 
-def get_fc(num_of_inputs, num_of_outputs, with_relu = False):
-    if not with_relu:
-        return torch.nn.Sequential(torch.nn.Linear(num_of_inputs, num_of_outputs) , torch.nn.ReLU())
-
-    return torch.nn.Linear(num_of_inputs, num_of_outputs)
+def get_fc(num_of_inputs, num_of_outputs, with_relu = False, num_of_layers = 1):
+#     print(num_of_inputs, num_of_outputs)
+    l = [] 
     
+    for i in range(num_of_layers):
+        l.append(('linear'+str(i), torch.nn.Linear(num_of_inputs, num_of_inputs if (i+1 != num_of_layers) else num_of_outputs)))
+        if with_relu:
+            l.append(('relu'+str(i), torch.nn.ReLU()))
+    d = collections.OrderedDict(l)
+    
+    seq = torch.nn.Sequential(d)
+#     from torchsummary import summary
+#     summary(seq, (1, num_of_inputs))
+    return seq
+
 # T
-def create_pretrained_model():
-    model = models.resnet18(pretrained=True)
+def create_pretrained_model(params):
+    resnet = params["resnet"]
+    
+    if resnet == "18":
+        model = models.resnet18(pretrained=True)
+    else:
+        model = models.resnet50(pretrained=True)
+        
     for param in model.parameters():
         param.requires_grad = False
     num_ftrs = model.fc.in_features
@@ -43,8 +53,8 @@ def create_model(architecture, params):
     if params["useHeirarchy"]:
         model = CNN_heirarchy(architecture, params)
     else:    
-        print('using a pretrained resnet18 model...')
-        model, num_ftrs = create_pretrained_model()
+        print('using a pretrained resnet model...')
+        model, num_ftrs = create_pretrained_model(params)
         model.fc = get_fc(num_ftrs, architecture["species"], False)
 
     return model
@@ -59,6 +69,14 @@ class CNN_heirarchy(nn.Module):
         imageDimension = params["imageDimension"]
         numberOfClasses = architecture["species"]
         numberOfGenus = architecture["genus"]
+        useRelu = params["useRelu"]
+        downsample = params["downsample"]
+        downsampleOutput = params["downsampleOutput"]
+        takeFromIntermediate = params["takeFromIntermediate"]
+        takeFromIntermediateOutput = params["takeFromIntermediateOutput"]
+        takeFromIntermediateOutput = params["takeFromIntermediateOutput"]
+        fc_layers = params["fc_layers"]
+        self.useSoftmax = params["softmax"]
         
         super(CNN_heirarchy, self).__init__()
         self.numberOfClasses = numberOfClasses
@@ -66,7 +84,7 @@ class CNN_heirarchy(nn.Module):
         self.module_list = nn.ModuleList()
 
         # The pretrained model
-        self.pretrained_model, num_ftrs = create_pretrained_model()
+        self.pretrained_model, num_ftrs = create_pretrained_model(params)
         resnet_subLayers = [self.pretrained_model.conv1,
           self.pretrained_model.bn1,
           self.pretrained_model.relu,
@@ -83,7 +101,7 @@ class CNN_heirarchy(nn.Module):
         species_inputs = num_ftrs
         self.downsampled_model = None
         if downsample:
-            self.downsampled_model = get_fc(num_ftrs, downsampleOutput, True)
+            self.downsampled_model = get_fc(num_ftrs, downsampleOutput, True, num_of_layers=fc_layers)
             self.module_list.append(self.downsampled_model)
             species_inputs = downsampleOutput
             
@@ -92,7 +110,7 @@ class CNN_heirarchy(nn.Module):
         intermediate_input = num_ftrs
         self.intermediate_genus_model = None
         if takeFromIntermediate:
-            self.intermediate_genus_model = get_fc(num_ftrs, takeFromIntermediateOutput, True)
+            self.intermediate_genus_model = get_fc(num_ftrs, takeFromIntermediateOutput, True, num_of_layers=fc_layers)
             self.module_list.append(self.intermediate_genus_model)
             genus_inputs = takeFromIntermediateOutput
             intermediate_input = takeFromIntermediateOutput
@@ -113,8 +131,11 @@ class CNN_heirarchy(nn.Module):
         self.to_species_layer = torch.nn.Linear(genus_inputs + species_inputs,  numberOfClasses)
         self.module_list.append(self.to_species_layer)
         
-        from torchsummary import summary
-        summary(self, (3, 224, 224))
+        if self.useSoftmax:
+            self.softmax_layer = torch.nn.Softmax(dim=1)
+        
+#         from torchsummary import summary
+#         summary(self, (3, 224, 224))
 
         # append layers
 #         self.moduleObj = {
@@ -135,32 +156,41 @@ class CNN_heirarchy(nn.Module):
         }
         return result
 
-        # Outputs in each steps
-    def activations(self, x):
-        
+
+    default_outputs = {
+        "species": True,
+        "genus" : True
+    }
+    def activations(self, x, outputs=default_outputs):
         inpt = x
         intermediate_from_resnet = torch.flatten(self.resnet_before_fc(inpt),1)
         
         genus_intermediate = self.pretrained_model(x)
-        if takeFromIntermediate:
-            genus = self.genus_fc(genus_intermediate)
-        else:
-            genus = genus_intermediate
-            
+        if outputs["genus"]:
+            if self.intermediate_genus_model is not None:
+                genus = self.genus_fc(genus_intermediate)
+            else:
+                genus = genus_intermediate
+            if self.useSoftmax:
+                genus = self.softmax_layer(genus)
+        
         if self.downsampled_model:
             downsampled_features = self.downsampled_model(intermediate_from_resnet)
         else:
             downsampled_features = intermediate_from_resnet
-            
-        species = self.to_species_layer(torch.cat((downsampled_features, genus_intermediate), 1))
+
+        if outputs["species"]:
+            species = self.to_species_layer(torch.cat((downsampled_features, genus_intermediate), 1))
+            if self.useSoftmax:
+                species = self.softmax_layer(species)
 
         activations = {
             "input": inpt,
             "intermediate_resent": intermediate_from_resnet,
             "genus_intermediate": genus_intermediate,
             "downsampled_features": downsampled_features,
-            "genus": genus,
-            "species": species
+            "genus": genus if outputs["genus"] else None,
+            "species": species if outputs["species"] else None
         }
 
         return activations
@@ -174,13 +204,16 @@ def trainModel(train_loader, validation_loader, params, model, savedModelName):
     learning_rate = params["learning_rate"]
     useHeirarchy = params["useHeirarchy"]
     batchSize = params["batchSize"]
+    useAdam = params["useAdam"]
     
     if not os.path.exists(savedModelName):
         os.makedirs(savedModelName)
     
 #     learning_rate = 0.1
-    optimizer = torch.optim.Adam(model.parameters(), lr = learning_rate)
-#     optimizer = torch.optim.SGD(model.parameters(), lr = learning_rate)
+    if useAdam:
+        optimizer = torch.optim.Adam(model.parameters(), lr = learning_rate)
+    else:
+        optimizer = torch.optim.SGD(model.parameters(), lr = learning_rate)
     training_loss_list=[]
     validation_accuracy_list=[]
     
@@ -268,7 +301,7 @@ def loadModel(model, savedModelName):
     with open(os.path.join(savedModelName, timeFileName), newline='') as f:
         reader = csv.reader(f)
         time_elapsed = float(next(reader)[0])
-    with open(os.path.join(savedModelName, lossFileName), newline='') as f:
+    with open(os.path.join(savedModelName, epochsFileName), newline='') as f:
         reader = csv.reader(f)
         epochs = float(next(reader)[0])
     return training_loss_list, validation_accuracy_list, epochs, time_elapsed

@@ -16,9 +16,10 @@ def getDatasetName(params):
     imageDimension = params["imageDimension"]
     n_channels = params["n_channels"]
     augmentation = params["augmentation"]
+    normalize = params["normalize"]
     
-    datasetName = ('tc%f_vc%f_d%d_c%d_c%aug') % (training_count, validation_count,
-                                                                          imageDimension, n_channels, augmentation)
+    datasetName = ('tc%f_vc%f_d%d_c%d_aug%s_n%s') % (training_count, validation_count,
+                                                                          imageDimension, n_channels, augmentation, normalize)
    
     return datasetName
     
@@ -29,8 +30,18 @@ def getModelName(params, trial_id=None):
     patience = params["patience"]
     learning_rate = params["learning_rate"]
     useHeirarchy = params["useHeirarchy"]
+    # temp
+    useRelu = params["useRelu"]
+    downsample = params["downsample"]
+    downsampleOutput = params["downsampleOutput"]
+    takeFromIntermediate = params["takeFromIntermediate"]
+    takeFromIntermediateOutput = params["takeFromIntermediateOutput"]
+    useAdam = params["useAdam"]
+    resnet = params["resnet"]
+    fc_layers = params["fc_layers"]
+    useSoftmax = params["softmax"]
     
-    modelName = ('%s_bs%d_e%d_p%d_lr%f_h%s') % (getDatasetName(params), batchSize, n_epochs, patience, learning_rate, useHeirarchy)
+    modelName = ('%s_bs%d_e%d_p%d_lr%f_h%s_relu%s_ds%s_dso%s_tfi%s_tfio%s_adm%s_res%s_fc%s_smax%s') % (getDatasetName(params), batchSize, n_epochs, patience, learning_rate, useHeirarchy, useRelu, downsample, downsampleOutput, takeFromIntermediate, takeFromIntermediateOutput, useAdam, resnet, fc_layers, useSoftmax)
    
     if trial_id is not None:
         modelName = modelName + (("_id%s")%(trial_id))  

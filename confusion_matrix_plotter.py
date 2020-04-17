@@ -2,8 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import itertools
 from sklearn.metrics import classification_report
-import os
-
+import os    
 
 def generate_classification_report(lbllist, predlist, numberOfSpecies, experimentName):
     classificationReport = classification_report(lbllist.cpu().numpy(), predlist.cpu().numpy(), labels = range(numberOfSpecies), digits=1)
@@ -51,7 +50,7 @@ def plot_confusion_matrix2(cm,
     http://scikit-learn.org/stable/auto_examples/model_selection/plot_confusion_matrix.html
 
     """
-
+    
     accuracy = np.trace(cm) / float(np.sum(cm))
     misclass = 1 - accuracy
 
@@ -83,13 +82,12 @@ def plot_confusion_matrix2(cm,
             plt.text(j, i, "{:,}".format(cm[i, j]),
                      horizontalalignment="center",
                      color="white" if cm[i, j] > thresh else "black")
-
-
+            
     plt.tight_layout()
     plt.ylabel('True label')
-    plt.xlabel('Predicted label\naccuracy={:0.4f}; misclass={:0.4f}'.format(accuracy, misclass))
+    plt.xlabel('Predicted label\nAccuracy={:0.4f}'.format(accuracy))
     plt.tight_layout(rect=[0, 0.03, 1, 0.95])
-    plt.savefig(os.path.join(experimentName, "confusionMatrix.png"))
+    plt.savefig(os.path.join(experimentName, "confusionMatrix.pdf"))
     if printOutput:
         plt.show()
     plt.close()
