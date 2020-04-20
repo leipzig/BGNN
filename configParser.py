@@ -40,8 +40,9 @@ def getModelName(params, trial_id=None):
     resnet = params["resnet"]
     fc_layers = params["fc_layers"]
     useSoftmax = params["softmax"]
+    batchNormalize = params["batchNormalize"]
     
-    modelName = ('%s_bs%d_e%d_p%d_lr%f_h%s_relu%s_ds%s_dso%s_tfi%s_tfio%s_adm%s_res%s_fc%s_smax%s') % (getDatasetName(params), batchSize, n_epochs, patience, learning_rate, useHeirarchy, useRelu, downsample, downsampleOutput, takeFromIntermediate, takeFromIntermediateOutput, useAdam, resnet, fc_layers, useSoftmax)
+    modelName = ('%s_bs%d_e%d_p%d_lr%f_h%s_relu%s_ds%s_dso%s_tfi%s_tfio%s_adm%s_res%s_fc%s_smax%s_bnorm%s') % (getDatasetName(params), batchSize, n_epochs, patience, learning_rate, useHeirarchy, useRelu, downsample, downsampleOutput, takeFromIntermediate, takeFromIntermediateOutput, useAdam, resnet, fc_layers, useSoftmax, batchNormalize)
    
     if trial_id is not None:
         modelName = modelName + (("_id%s")%(trial_id))  

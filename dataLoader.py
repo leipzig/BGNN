@@ -57,6 +57,7 @@ class FishDataset(Dataset):
         self.genusList= None
         self.normalizer = None
         self.transforms = None
+        self.composedTransforms = None
         
         data_root_suffix = os.path.join(self.data_root, self.suffix)
         if not os.path.exists(data_root_suffix):
@@ -134,10 +135,10 @@ class FishDataset(Dataset):
 
         # Create transfroms
         # Toggle beforehand so we could create the normalization transform. Then toggle back.
-        augmentation, normalization = self.toggle_image_loading(augmentation=False, normalization=False)
-        if self.normalizer is None:
+        if self.normalization_enabled == True and self.normalizer is None:
+            augmentation, normalization = self.toggle_image_loading(augmentation=False, normalization=False)
             self.normalizer = dataset_normalization(self).getTransform()
-        self.toggle_image_loading(augmentation, normalization)
+            self.toggle_image_loading(augmentation, normalization)
     
     def getTransforms(self):
         transformsList = [transforms.ToPILImage(),
@@ -179,8 +180,7 @@ class FishDataset(Dataset):
         pad_2 = diff - pad_1
         stat = ImageStat.Stat(img)
         fill = tuple([round(x) for x in stat.mean])
-#         if self.n_channels != 1:
-#             fill = (255, 255, 255)
+
         if smaller_dimension == 0:
             img = transforms.functional.pad(img, (pad_1, 0, pad_2, 0), padding_mode='constant', fill = fill)
         else:
@@ -191,7 +191,7 @@ class FishDataset(Dataset):
     def __len__(self):
         return len(self.samples)
     
-    # The list of species names
+    # The list of species/genus names
     def getSpeciesList(self):
         if self.speciesList is None:
             self.speciesList = self.species_csv[species_csv_scientificName_header].unique().tolist()
@@ -221,6 +221,7 @@ class FishDataset(Dataset):
     def getGenusFromSpecies(self, species):
         return self.species_csv.loc[self.species_csv[species_csv_scientificName_header] == species][species_csv_Genus_header].unique().tolist()[0]
     
+    # Returns a list of species_index that belong to a genus
     def getSpeciesWithinGenus(self, genus):
         return self.species_csv.loc[self.species_csv[species_csv_Genus_header] == genus][species_csv_scientificName_header].unique().tolist()
     
@@ -229,7 +230,6 @@ class FishDataset(Dataset):
         self.augmentation_enabled = augmentation
         self.normalization_enabled = normalization
         self.transforms = None
-#         print("toggling augmentation,normalization to", augmentation, normalization)
         return old
 
     def __getitem__(self, idx):       
@@ -238,8 +238,8 @@ class FishDataset(Dataset):
         
         if self.transforms is None:
             self.transforms = self.getTransforms()
-        plain_transform = transforms.Compose(self.transforms)
-        image = plain_transform(image)
+            self.composedTransforms = transforms.Compose(self.transforms)
+        image = self.composedTransforms(image)
             
         fileName = self.samples[idx]['fileName']
         matchFamily = self.samples[idx]['family']
@@ -274,14 +274,17 @@ def readFile(fullFileName):
         print("Couldn't read pickle", fullFileName)
         pass  
 
-    
+
+# Given a model and a dataset, get an example image of a species where trueLabel=speciesIndex where predictedLabel=expectedIndex  
 def getExample(model, dataset, speciesIndex, expectedIndex, useHeirarchy=True):
     speciesExampleImage = None
     speciesName = dataset.getSpeciesOfIndex(speciesIndex)
 
+    # get all examples trueLabel=speciesIndex
     augmentation, normalizatoion = dataset.toggle_image_loading(augmentation=False, normalization=False)
     speciesExamples = dataset.getSpeciesIndices(speciesName)
 
+    # Find an example that predictedLabel=expectedIndex
     random.shuffle(speciesExamples)
     for example in speciesExamples:
         image = dataset[example]['image'].unsqueeze(0)

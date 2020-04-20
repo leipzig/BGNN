@@ -9,6 +9,8 @@ class dataset_normalization():
         mean = 0.
         std = 0.
         nb_samples = 0.
+        
+        # Calculate the median per channel
         for data in self.dataloader:
             data  = data["image"]
             batch_samples = data.size(0)

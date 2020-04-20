@@ -18,22 +18,22 @@ epochsFileName = "epochs.csv"
 
 import torchvision.models as models
 
-def get_fc(num_of_inputs, num_of_outputs, with_relu = False, num_of_layers = 1):
-#     print(num_of_inputs, num_of_outputs)
+# Create an FC layer with RELU and/or BatchNormalization
+def get_fc(num_of_inputs, num_of_outputs, with_relu = False, with_bnorm = False, num_of_layers = 1):
     l = [] 
     
     for i in range(num_of_layers):
-        l.append(('linear'+str(i), torch.nn.Linear(num_of_inputs, num_of_inputs if (i+1 != num_of_layers) else num_of_outputs)))
+        n_out = num_of_inputs if (i+1 != num_of_layers) else num_of_outputs
+        l.append(('linear'+str(i), torch.nn.Linear(num_of_inputs, n_out)))
+        if with_bnorm:
+            l.append(('bnorm'+str(i), torch.nn.BatchNorm1d(n_out)))
         if with_relu:
             l.append(('relu'+str(i), torch.nn.ReLU()))
     d = collections.OrderedDict(l)
     
     seq = torch.nn.Sequential(d)
-#     from torchsummary import summary
-#     summary(seq, (1, num_of_inputs))
     return seq
 
-# T
 def create_pretrained_model(params):
     resnet = params["resnet"]
     
@@ -46,20 +46,28 @@ def create_pretrained_model(params):
         param.requires_grad = False
     num_ftrs = model.fc.in_features
     return model, num_ftrs
-    
+
 def create_model(architecture, params):
     model = None
 
     if params["useHeirarchy"]:
         model = CNN_heirarchy(architecture, params)
     else:    
+        fc_layers = params["fc_layers"]
+        useSoftmax = params["softmax"]
+        useRelu = params["useRelu"]
+        batchNormalize = params["batchNormalize"]
+        
         print('using a pretrained resnet model...')
         model, num_ftrs = create_pretrained_model(params)
-        model.fc = get_fc(num_ftrs, architecture["species"], False)
+        fc = get_fc(num_ftrs, architecture["species"], useRelu, batchNormalize, fc_layers)
+        if useSoftmax:
+            fc = torch.nn.Sequential(fc, torch.nn.Softmax(dim=1))
+        model.fc = fc
 
     return model
 
-# Build the convolutional Neural Network Class
+# Build a Hierarchical convolutional Neural Network
 class CNN_heirarchy(nn.Module):
     
     # Contructor
@@ -77,6 +85,7 @@ class CNN_heirarchy(nn.Module):
         takeFromIntermediateOutput = params["takeFromIntermediateOutput"]
         fc_layers = params["fc_layers"]
         self.useSoftmax = params["softmax"]
+        batchNormalize = params["batchNormalize"]
         
         super(CNN_heirarchy, self).__init__()
         self.numberOfClasses = numberOfClasses
@@ -101,7 +110,7 @@ class CNN_heirarchy(nn.Module):
         species_inputs = num_ftrs
         self.downsampled_model = None
         if downsample:
-            self.downsampled_model = get_fc(num_ftrs, downsampleOutput, True, num_of_layers=fc_layers)
+            self.downsampled_model = get_fc(num_ftrs, downsampleOutput, True, batchNormalize, num_of_layers=fc_layers)
             self.module_list.append(self.downsampled_model)
             species_inputs = downsampleOutput
             
@@ -110,7 +119,7 @@ class CNN_heirarchy(nn.Module):
         intermediate_input = num_ftrs
         self.intermediate_genus_model = None
         if takeFromIntermediate:
-            self.intermediate_genus_model = get_fc(num_ftrs, takeFromIntermediateOutput, True, num_of_layers=fc_layers)
+            self.intermediate_genus_model = get_fc(num_ftrs, takeFromIntermediateOutput, True, batchNormalize, num_of_layers=fc_layers)
             self.module_list.append(self.intermediate_genus_model)
             genus_inputs = takeFromIntermediateOutput
             intermediate_input = takeFromIntermediateOutput
@@ -125,7 +134,6 @@ class CNN_heirarchy(nn.Module):
         else:
             self.pretrained_model.fc = self.genus_fc
         self.module_list.insert(0, self.pretrained_model)
-
         
         # the fully connect species later
         self.to_species_layer = torch.nn.Linear(genus_inputs + species_inputs,  numberOfClasses)
@@ -133,19 +141,6 @@ class CNN_heirarchy(nn.Module):
         
         if self.useSoftmax:
             self.softmax_layer = torch.nn.Softmax(dim=1)
-        
-#         from torchsummary import summary
-#         summary(self, (3, 224, 224))
-
-        # append layers
-#         self.moduleObj = {
-#             "resnet_before_fc": self.resnet_before_fc,
-#             "self.pretrained_model": self.pretrained_model,
-#             "downsampled_model": self.downsampled_model,
-#             "intermediate_genus_model": self.intermediate_genus_model,
-#             "genus_fc": self.genus_fc,
-#             "to_species_layer": self.to_species_layer,
-#         }
     
     # Prediction
     def forward(self, x):
@@ -209,7 +204,6 @@ def trainModel(train_loader, validation_loader, params, model, savedModelName):
     if not os.path.exists(savedModelName):
         os.makedirs(savedModelName)
     
-#     learning_rate = 0.1
     if useAdam:
         optimizer = torch.optim.Adam(model.parameters(), lr = learning_rate)
     else:
@@ -242,6 +236,7 @@ def trainModel(train_loader, validation_loader, params, model, savedModelName):
                         loss = criterion(z, batch["species"])
                         loss.backward()
                     optimizer.step()
+            model.eval()
 
             #perform a prediction on the validation data  
             validation_accuracy_list.append(getAccuracyFromLoader(validation_loader, model, params))
@@ -285,6 +280,7 @@ def trainModel(train_loader, validation_loader, params, model, savedModelName):
     
     return training_loss_list, validation_accuracy_list, epochs, time_elapsed
 
+# loads a saved model along with its results
 def loadModel(model, savedModelName):
     model.load_state_dict(torch.load(os.path.join(savedModelName, CheckpointNameFinal))) 
     model.eval()
